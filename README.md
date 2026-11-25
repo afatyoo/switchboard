@@ -46,7 +46,7 @@ See [docs/CONCEPT.md](docs/CONCEPT.md) and [docs/LAB-RESULTS.md](docs/LAB-RESULT
 
 ```sh
 make linux                      # builds dist/switchboard-linux-amd64
-install -m 755 dist/switchboard-linux-amd64 /usr/local/bin/switchboard
+install -m 755 dist/switchboard-linux-amd64 /usr/bin/switchboard   # or use the .deb
 install -D -m 640 config.example.yaml /etc/switchboard/config.yaml
 
 switchboard add mail.customer1.com -cert cert.pem -key key.pem -chain chain.pem
