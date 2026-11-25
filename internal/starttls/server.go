@@ -48,7 +48,9 @@ func (l *Listener) Serve(ctx context.Context) error {
 	if l.Log == nil {
 		l.Log = log.Default()
 	}
-	ln, err := net.Listen("tcp", l.Listen)
+	// IPv4 only, like the HAProxy listeners: IPv6 is not supported yet and a
+	// dual-stack socket would bypass the iptables (IPv4) guard.
+	ln, err := net.Listen("tcp4", l.Listen)
 	if err != nil {
 		return err
 	}

@@ -177,6 +177,23 @@ those source ports.
 | Regression: 993/995 suite, 465 suite | All pass |
 | Unit tests: injected data after STARTTLS, long lines, command limit, per IP limit | Rejected |
 
+## Fail-open watchdog and port guard
+
+| Test | Result |
+|---|---|
+| Direct connection from outside to 10993 and 10587 | Dropped by guard |
+| Public ports with guard active | Customer certificate, all suites pass |
+| HAProxy stopped | After about 15 s redirects for 993/995/465 removed; clients get the infrastructure certificate from Carbonio directly |
+| HAProxy started again | Redirects restored, customer certificate again |
+| STARTTLS proxy stopped | Redirects for 587/143/110 removed; STARTTLS answered by Carbonio with the infrastructure certificate |
+| STARTTLS proxy started again | Redirects restored |
+
+First attempt found a bug: the old TPROXY rule routed every reply from ports
+993/587/... back into the host, including replies to clients that reached
+Carbonio directly, so fail-open did not work. The rule now marks only
+connections opened by Switchboard (CONNMARK on new local connections with a
+non-local source address).
+
 ## Rollback
 
 ```sh
