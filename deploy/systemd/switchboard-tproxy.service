@@ -7,8 +7,9 @@ Before=haproxy.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/sbin/switchboard-tproxy-setup
-ExecStop=/usr/local/sbin/switchboard-tproxy-rollback
+ExecStart=/usr/lib/switchboard/tproxy-setup.sh
+ExecStart=/usr/lib/switchboard/guard.sh
+ExecStop=/usr/lib/switchboard/tproxy-rollback.sh
 
 [Install]
 WantedBy=multi-user.target

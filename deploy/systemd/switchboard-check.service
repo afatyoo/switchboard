@@ -3,4 +3,4 @@ Description=Switchboard certificate check
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/switchboard check
+ExecStart=/usr/bin/switchboard check

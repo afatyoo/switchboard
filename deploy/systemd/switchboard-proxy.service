@@ -4,7 +4,7 @@ After=network-online.target switchboard-tproxy.service
 Wants=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/switchboard proxy
+ExecStart=/usr/bin/switchboard proxy
 Restart=on-failure
 RestartSec=2
 User=haproxy

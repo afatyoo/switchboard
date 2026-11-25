@@ -1,0 +1,63 @@
+name: package
+on:
+  pull_request:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Version
+        id: v
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ "$REF_TYPE" = "tag" ]; then
+            v="${REF_NAME#v}"
+          else
+            v="0.0.0-dev+${SHA::7}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Test
+        run: make vet test
+
+      - name: Build
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: make linux VERSION="v$VERSION"
+
+      - name: Package
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.1
+          mkdir -p dist/pkg
+          nfpm package --config packaging/nfpm.yaml --packager deb --target dist/pkg/
+          cp dist/switchboard-linux-amd64 dist/pkg/
+          cd dist/pkg && sha256sum * > SHA256SUMS && ls -l
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: switchboard-${{ steps.v.outputs.version }}
+          path: dist/pkg/
+
+      - name: Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          notes=$(awk -v t="## ${TAG}" '$0==t{f=1;next} /^## /{f=0} f' CHANGELOG.md)
+          gh release create "$TAG" dist/pkg/* --title "Switchboard $TAG" --notes "$notes"
