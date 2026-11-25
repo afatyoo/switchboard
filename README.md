@@ -55,6 +55,28 @@ install -m 644 deploy/systemd/switchboard-proxy.service /etc/systemd/system/
 systemctl enable --now switchboard-proxy
 ```
 
+## Fail-open watchdog and port guard
+
+`switchboard watchdog` probes every Switchboard listener every 5 seconds (TLS
+handshake for 10993/10995/10465, protocol greeting for 10587/10143/10110). After
+3 failures it removes that port's redirect, so clients reach Carbonio directly
+with the infrastructure certificate instead of failing. After 3 successes it
+restores the redirect.
+
+`deploy/iptables/guard.sh` drops direct connections to the 10xxx listener ports
+from outside; only redirected traffic and local health checks reach them.
+
+The TPROXY rules mark only connections opened by Switchboard (connmark), so a
+client that goes straight to Carbonio is answered normally.
+
+```sh
+install -m 644 deploy/systemd/switchboard-watchdog.service /etc/systemd/system/
+systemctl enable --now switchboard-watchdog
+sh deploy/iptables/guard.sh && netfilter-persistent save
+```
+
+See [docs/PRODUCTION.md](docs/PRODUCTION.md) for what is still missing before production.
+
 ## LDAP mode
 
 With `mode: ldap`, `switchboard sync` reads every Carbonio domain that has

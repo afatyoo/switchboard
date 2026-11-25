@@ -28,6 +28,7 @@ Commands:
   check                                             validate all certificates (exit 1 on problems)
   sync [-dry-run]                                   (mode ldap) install certificates from Carbonio LDAP
   proxy                                             run the STARTTLS proxy (587, 143, 110) in the foreground
+  watchdog                                          remove a port's redirect while its listener is down (fail open)
   version                                          print the version
 `
 
@@ -107,6 +108,8 @@ func run(args []string) error {
 		return withLock(cfg.LockFile, func() error { return cmdSync(cfg, st, opts, *dry) })
 	case "proxy":
 		return cmdProxy(cfg)
+	case "watchdog":
+		return cmdWatchdog(cfg)
 	case "list":
 		return cmdList(st, opts, false)
 	case "check":

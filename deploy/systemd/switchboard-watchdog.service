@@ -1,0 +1,15 @@
+[Unit]
+Description=Switchboard fail-open watchdog
+After=network-online.target netfilter-persistent.service haproxy.service switchboard-proxy.service
+
+[Service]
+ExecStart=/usr/local/bin/switchboard watchdog
+Restart=always
+RestartSec=2
+# Needs root for iptables.
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

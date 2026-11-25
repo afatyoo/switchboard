@@ -32,8 +32,9 @@ type Config struct {
 		StateFile    string        `yaml:"state_file"` // hostnames installed by sync
 		MaxRemove    int           `yaml:"max_remove"` // refuse bigger removals in one run
 	} `yaml:"ldap"`
-	Proxy   Proxy `yaml:"proxy"`
-	HAProxy struct {
+	Proxy    Proxy    `yaml:"proxy"`
+	Watchdog Watchdog `yaml:"watchdog"`
+	HAProxy  struct {
 		CheckCmd  []string      `yaml:"check_cmd"`
 		ReloadCmd []string      `yaml:"reload_cmd"`
 		Timeout   time.Duration `yaml:"timeout"`
@@ -54,6 +55,10 @@ func Default() Config {
 	c.LDAP.Timeout = 15 * time.Second
 	c.LDAP.StateFile = "/var/lib/switchboard/ldap-managed.json"
 	c.LDAP.MaxRemove = 5
+	c.Watchdog.Interval = 5 * time.Second
+	c.Watchdog.FailAfter = 3
+	c.Watchdog.RecoverAfter = 3
+	c.Watchdog.Ports = DefaultWatchdogPorts()
 	return c
 }
 
