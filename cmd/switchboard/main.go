@@ -17,7 +17,10 @@ import (
 	"github.com/afatyoo/switchboard/internal/store"
 )
 
-var version = "dev"
+var (
+	version  = "dev"
+	codename = "" // release codename, see docs/CODENAMES.md
+)
 
 const usage = `Usage: switchboard [-config FILE] COMMAND [ARGS]
 
@@ -54,7 +57,11 @@ func run(args []string) error {
 	}
 	cmd, rest := rest[0], rest[1:]
 	if cmd == "version" {
-		fmt.Println(version)
+		if codename != "" {
+			fmt.Printf("%s (%s)\n", version, codename)
+		} else {
+			fmt.Println(version)
+		}
 		return nil
 	}
 	if cmd == "setup" {
