@@ -14,13 +14,24 @@ import (
 
 // Config is the content of /etc/switchboard/config.yaml.
 type Config struct {
-	Mode     string `yaml:"mode"`      // manual (ldap planned)
+	Mode     string `yaml:"mode"`      // manual or ldap
 	CertDir  string `yaml:"cert_dir"`  // HAProxy crt directory
 	Group    string `yaml:"group"`     // group owning certificate files
 	ExtraCA  string `yaml:"extra_ca"`  // optional CA file trusted in addition to system roots
 	WarnDays int    `yaml:"warn_days"` // warn when fewer days are left
 	LockFile string `yaml:"lock_file"`
-	HAProxy  struct {
+	LDAP     struct {
+		URL          string        `yaml:"url"`
+		StartTLS     bool          `yaml:"starttls"`
+		BindDN       string        `yaml:"bind_dn"`
+		PasswordFile string        `yaml:"password_file"`
+		BaseDN       string        `yaml:"base_dn"`
+		CAFile       string        `yaml:"ca_file"`
+		Timeout      time.Duration `yaml:"timeout"`
+		StateFile    string        `yaml:"state_file"` // hostnames installed by sync
+		MaxRemove    int           `yaml:"max_remove"` // refuse bigger removals in one run
+	} `yaml:"ldap"`
+	HAProxy struct {
 		CheckCmd  []string      `yaml:"check_cmd"`
 		ReloadCmd []string      `yaml:"reload_cmd"`
 		Timeout   time.Duration `yaml:"timeout"`
@@ -38,6 +49,9 @@ func Default() Config {
 	c.HAProxy.CheckCmd = []string{"haproxy", "-c", "-q", "-f", "/etc/haproxy/haproxy.cfg"}
 	c.HAProxy.ReloadCmd = []string{"systemctl", "reload", "haproxy"}
 	c.HAProxy.Timeout = 30 * time.Second
+	c.LDAP.Timeout = 15 * time.Second
+	c.LDAP.StateFile = "/var/lib/switchboard/ldap-managed.json"
+	c.LDAP.MaxRemove = 5
 	return c
 }
 
@@ -63,7 +77,12 @@ func (c Config) validate() error {
 	switch c.Mode {
 	case "manual":
 	case "ldap":
-		return errors.New("mode ldap is not implemented yet (planned for v0.2.0)")
+		if c.LDAP.URL == "" || c.LDAP.BindDN == "" || c.LDAP.PasswordFile == "" {
+			return errors.New("mode ldap needs ldap.url, ldap.bind_dn and ldap.password_file")
+		}
+		if c.LDAP.StateFile == "" {
+			return errors.New("ldap.state_file is required")
+		}
 	default:
 		return fmt.Errorf("unknown mode %q", c.Mode)
 	}

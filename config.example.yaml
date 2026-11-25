@@ -1,10 +1,23 @@
 # /etc/switchboard/config.yaml
-mode: manual                 # manual (ldap planned for v0.2.0)
+mode: manual                 # manual | ldap
 cert_dir: /etc/haproxy/certs # HAProxy "crt" directory
 group: haproxy               # files are written root:<group> 0640
 # extra_ca: /etc/switchboard/extra-ca.pem   # trust an extra CA (labs, private CA)
 warn_days: 21
 lock_file: /run/switchboard.lock
+
+# Used when mode: ldap. Read-only: Switchboard only searches and never writes.
+ldap:
+  url: ldaps://ldap.provider.example:636   # or ldap:// with starttls: true
+  starttls: false
+  bind_dn: uid=switchboard,cn=appaccts,cn=zimbra   # an account that can read zimbraSSLPrivateKey
+  password_file: /etc/switchboard/ldap.pass      # mode 0600
+  base_dn: ""                                    # "" searches the whole tree
+  # ca_file: /etc/switchboard/ldap-ca.pem
+  timeout: 15s
+  state_file: /var/lib/switchboard/ldap-managed.json
+  max_remove: 5              # refuse to remove more certificates than this in one run
+
 haproxy:
   check_cmd: [haproxy, -c, -q, -f, /etc/haproxy/haproxy.cfg]
   reload_cmd: [systemctl, reload, haproxy]

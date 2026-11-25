@@ -26,7 +26,8 @@ Commands:
   remove HOSTNAME                                   remove a certificate
   list                                              show installed certificates
   check                                             validate all certificates (exit 1 on problems)
-  version                                           print the version
+  sync [-dry-run]                                   (mode ldap) install certificates from Carbonio LDAP
+  version                                          print the version
 `
 
 func main() {
@@ -75,7 +76,13 @@ func run(args []string) error {
 
 	switch cmd {
 	case "add":
-		return withLock(cfg.LockFile, func() error { return cmdAdd(st, opts, rest) })
+		return withLock(cfg.LockFile, func() error {
+			if err := cmdAdd(st, opts, rest); err != nil {
+				return err
+			}
+			// A manual add takes the hostname over from sync.
+			return forgetManaged(cfg, rest[0])
+		})
 	case "remove":
 		if len(rest) != 1 {
 			return errors.New("usage: switchboard remove HOSTNAME")
@@ -85,8 +92,18 @@ func run(args []string) error {
 				return err
 			}
 			fmt.Printf("removed %s, HAProxy reloaded\n", rest[0])
-			return nil
+			return forgetManaged(cfg, rest[0])
 		})
+	case "sync":
+		if cfg.Mode != "ldap" {
+			return errors.New("sync needs mode: ldap in the configuration")
+		}
+		fs := flag.NewFlagSet("sync", flag.ContinueOnError)
+		dry := fs.Bool("dry-run", false, "show the plan without changing anything")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		return withLock(cfg.LockFile, func() error { return cmdSync(cfg, st, opts, *dry) })
 	case "list":
 		return cmdList(st, opts, false)
 	case "check":
