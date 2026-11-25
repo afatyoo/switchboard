@@ -9,4 +9,5 @@ iptables -t mangle -D OUTPUT -p tcp -m multiport --sports $PORTS ! -d 127.0.0.0/
 iptables -t mangle -F SWITCHBOARD 2>/dev/null; iptables -t mangle -X SWITCHBOARD 2>/dev/null
 ip rule del fwmark 0x51 lookup 151 2>/dev/null
 ip route flush table 151 2>/dev/null
+ip addr del ${UPSTREAM_IP:-10.255.255.1}/32 dev lo 2>/dev/null
 true

@@ -77,6 +77,24 @@ sh deploy/iptables/guard.sh && netfilter-persistent save
 
 See [docs/PRODUCTION.md](docs/PRODUCTION.md) for what is still missing before production.
 
+## Upstream address
+
+HAProxy and the STARTTLS proxy reach Carbonio on `10.255.255.1`, an address
+`deploy/tproxy/setup.sh` adds to `lo` (override with `UPSTREAM_IP`). Carbonio
+listens on `0.0.0.0`, so nothing changes on its side. Using the public address
+instead makes the upstream connection tuple identical to a client's own
+connection whenever the kernel picks the same source port, which happened for
+about 1.4% of sessions when 1000 clients shared one IP (a large office behind
+NAT looks exactly like that).
+
+## Logs
+
+`deploy/rsyslog/30-switchboard.conf` writes `/var/log/switchboard/switchboard.log`
+(one line per STARTTLS session with client IP, SNI and result, plus watchdog
+events) and `/var/log/switchboard/haproxy.log`, with daily rotation from
+`deploy/rsyslog/switchboard.logrotate`. Uncomment the `omfwd` actions to forward
+to a central syslog server. Watchdog health probes from localhost are not logged.
+
 ## Prometheus metrics and alerts
 
 With `watchdog.metrics_file` set, `switchboard watchdog` writes
@@ -99,7 +117,12 @@ Alert rules: [`deploy/prometheus/switchboard-rules.yml`](deploy/prometheus/switc
 (fail-open, listener down, watchdog stale, certificate expiring or invalid,
 sync failing or stale, proxy upstream errors). On Carbonio copy it to
 `/etc/carbonio/carbonio-prometheus/rules/` and send `SIGHUP` to Prometheus.
-Routing alerts to email or chat is Alertmanager's job.
+Routing alerts to email or chat is Alertmanager's job. On Carbonio, point
+Prometheus at the bundled Alertmanager by adding
+`/etc/carbonio/carbonio-prometheus/alertmanager/switchboard.yml` with
+`- targets: ["localhost:9095"]`, then add a route for `alertname=~"Switchboard.*"`
+to Alertmanager's config. The sender must be an existing mailbox, Carbonio
+rejects unknown local senders.
 
 ```yaml
 watchdog:

@@ -186,17 +186,26 @@ func DefaultProbe(ctx context.Context, p Port) error {
 	switch p.Check {
 	case "tls":
 		// Health only: the certificate is checked elsewhere (switchboard check).
+		// Waiting for the server greeting over TLS proves the whole path,
+		// including HAProxy's verified connection to Carbonio.
 		tc := tls.Client(c, &tls.Config{InsecureSkipVerify: true, ServerName: "watchdog.invalid"})
-		return tc.HandshakeContext(ctx)
-	case "banner":
-		l, err := bufio.NewReader(c).ReadString('\n')
-		if err != nil {
+		if err := tc.HandshakeContext(ctx); err != nil {
 			return err
 		}
-		if !(strings.HasPrefix(l, "220") || strings.HasPrefix(l, "* OK") || strings.HasPrefix(l, "+OK")) {
-			return fmt.Errorf("unexpected greeting %q", strings.TrimSpace(l))
-		}
-		return nil
+		return greeting(tc)
+	case "banner":
+		return greeting(c)
 	}
 	return fmt.Errorf("unknown check %q", p.Check)
+}
+
+func greeting(c net.Conn) error {
+	l, err := bufio.NewReader(c).ReadString('\n')
+	if err != nil {
+		return err
+	}
+	if !(strings.HasPrefix(l, "220") || strings.HasPrefix(l, "* OK") || strings.HasPrefix(l, "+OK")) {
+		return fmt.Errorf("unexpected greeting %q", strings.TrimSpace(l))
+	}
+	return nil
 }
