@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## v0.2.0
+
+Installation becomes one command, and fail-open now covers the STARTTLS ports
+properly. Tested on a Carbonio 26.9 node on Ubuntu 24.04.
+
+### Upgrade notes
+
+- `apt install ./switchboard_0.2.0_amd64.deb` over v0.1.0 restarts the running
+  services with the new binary; the configuration is kept.
+- Existing configurations with `check: banner` keep working and now get the
+  full STARTTLS check. New configurations use `check: starttls`.
 
 ### Added
 
