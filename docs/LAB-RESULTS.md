@@ -310,6 +310,18 @@ warns about it. Private CA customer certificates need `-extra-ca`. The
 STARTTLS listener probe only checks the proxy greeting, not the connection to
 Carbonio, so a broken upstream on 587/143/110 is not caught by setup's check.
 
+## Full STARTTLS watchdog check
+
+| Test | Result |
+|---|---|
+| Proxy upstream verification broken (`upstream_verify_name` set to a wrong name), proxy still running | Watchdog: `no answer from Carbonio after STARTTLS` on 587, 143, 110; redirects removed; clients get the infrastructure certificate straight from Carbonio; 993/995/465 unaffected |
+| Configuration restored | Redirects restored, customer certificate again |
+| All suites | 15 + 4 + 13 pass |
+| Extra load on Carbonio | 2 probe connections per minute on Postfix submission (one full check per port every 30 s); no extra Switchboard log lines |
+
+Before this change the same fault left 587/143/110 redirected to a proxy that
+dropped every session right after STARTTLS.
+
 ## Rollback
 
 ```sh

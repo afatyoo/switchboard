@@ -85,7 +85,7 @@ func (l *Listener) handle(c net.Conn) {
 	defer func() {
 		c.Close()
 		l.Stats.end(l.Proto.Name(), result)
-		if result == "closed before STARTTLS" && net.ParseIP(ip).IsLoopback() {
+		if (result == "closed before STARTTLS" || result == "ok") && net.ParseIP(ip).IsLoopback() {
 			return // watchdog health probe, not worth a log line every few seconds
 		}
 		l.Log.Printf("%s client=%s sni=%s result=%q duration=%s", l.Proto.Name(), ip, sni, result, time.Since(start).Round(time.Millisecond))

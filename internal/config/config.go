@@ -61,6 +61,7 @@ func Default() Config {
 	c.Watchdog.Interval = 5 * time.Second
 	c.Watchdog.FailAfter = 3
 	c.Watchdog.RecoverAfter = 3
+	c.Watchdog.DeepEvery = 30 * time.Second
 	c.Watchdog.Ports = DefaultWatchdogPorts()
 	return c
 }

@@ -68,8 +68,10 @@ mail client              │                                                │
 3. A new, verified TLS connection goes to Carbonio, using the client's IP as
    source address (TPROXY), so Carbonio and Postfix see and log the real client.
 4. Authentication, mailbox access and mail delivery stay entirely with Carbonio.
-5. If a Switchboard listener stops answering, the watchdog removes that port's
-   redirect and clients reach Carbonio directly (fail-open).
+5. If the path through Switchboard stops working, the watchdog removes that
+   port's redirect and clients reach Carbonio directly (fail-open). The check
+   goes all the way to Carbonio: the server greeting over TLS on 993/995/465,
+   and a full STARTTLS exchange on 587/143/110.
 
 ## Features
 

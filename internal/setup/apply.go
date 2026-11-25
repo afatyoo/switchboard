@@ -328,7 +328,7 @@ func (a *Applier) verify(p *Plan) error {
 				last[pub] = "redirect not active yet"
 				continue
 			}
-			check := "banner"
+			check := "starttls"
 			if port.Implicit {
 				check = "tls"
 			}

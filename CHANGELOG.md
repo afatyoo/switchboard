@@ -12,6 +12,16 @@
 ### Changed
 
 - Debian package metadata now says MIT.
+- Watchdog check for STARTTLS ports is now `starttls` (`banner` still accepted):
+  it runs STARTTLS and waits for an answer from Carbonio, at most every
+  `watchdog.deep_every` (default 30 s) per port, greeting only in between.
+
+### Fixed
+
+- A broken path from the STARTTLS proxy to Carbonio (wrong upstream name or
+  CA, TPROXY rules missing, Carbonio service down) did not trigger fail-open
+  on 587, 143 and 110, because the proxy answers the greeting itself.
+  `setup` had the same blind spot.
 
 ## v0.1.0
 

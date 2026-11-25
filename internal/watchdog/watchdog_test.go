@@ -98,10 +98,10 @@ func TestDefaultProbeBanner(t *testing.T) {
 		}
 	}()
 	port, _ := strconv.Atoi(ln.Addr().(*net.TCPAddr).AddrPort().String()[len("127.0.0.1:"):])
-	if err := DefaultProbe(context.Background(), Port{Local: port, Check: "banner"}); err != nil {
+	if err := probeGreeting(context.Background(), Port{Local: port, Check: "banner"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := DefaultProbe(context.Background(), Port{Local: 1, Check: "banner"}); err == nil {
+	if err := probeGreeting(context.Background(), Port{Local: 1, Check: "banner"}); err == nil {
 		t.Fatal("closed port reported healthy")
 	}
 }
