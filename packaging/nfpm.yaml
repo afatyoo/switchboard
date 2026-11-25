@@ -16,7 +16,7 @@ description: |
   Carbonio when it is unhealthy.
 vendor: Switchboard
 homepage: https://github.com/afatyoo/switchboard
-license: Proprietary
+license: MIT
 
 depends:
   - haproxy (>= 2.4)
@@ -77,6 +77,8 @@ contents:
     dst: /usr/share/switchboard/rsyslog/switchboard.logrotate
   - src: README.md
     dst: /usr/share/doc/switchboard/README.md
+  - src: LICENSE
+    dst: /usr/share/doc/switchboard/copyright
   - src: CHANGELOG.md
     dst: /usr/share/doc/switchboard/CHANGELOG.md
   - src: docs/
