@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/afatyoo/switchboard/internal/cert"
 	"github.com/afatyoo/switchboard/internal/config"
@@ -12,13 +13,14 @@ import (
 
 func cmdSync(cfg config.Config, st *store.Store, opts cert.Options, dry bool) error {
 	domains, err := ldap.Fetch(ldap.Config{
-		URL:          cfg.LDAP.URL,
-		StartTLS:     cfg.LDAP.StartTLS,
-		BindDN:       cfg.LDAP.BindDN,
-		PasswordFile: cfg.LDAP.PasswordFile,
-		BaseDN:       cfg.LDAP.BaseDN,
-		CAFile:       cfg.LDAP.CAFile,
-		Timeout:      cfg.LDAP.Timeout,
+		URL:             cfg.LDAP.URL,
+		StartTLS:        cfg.LDAP.StartTLS,
+		BindDN:          cfg.LDAP.BindDN,
+		PasswordFile:    cfg.LDAP.PasswordFile,
+		PasswordCommand: cfg.LDAP.PasswordCmd,
+		BaseDN:          cfg.LDAP.BaseDN,
+		CAFile:          cfg.LDAP.CAFile,
+		Timeout:         cfg.LDAP.Timeout,
 	})
 	if err != nil {
 		// Never touch installed certificates when LDAP is unreachable.
@@ -49,6 +51,9 @@ func cmdSync(cfg config.Config, st *store.Store, opts cert.Options, dry bool) er
 		return readErr
 	}
 
+	if strings.HasPrefix(cfg.LDAP.URL, "ldap://") && !cfg.LDAP.StartTLS {
+		fmt.Println("warning  ldap:// without starttls sends the bind password and private keys in clear text; use ldapi:// on the same host or ldaps://")
+	}
 	fmt.Printf("ldap: %d domain(s) with virtual hostnames and a certificate\n", len(domains))
 	for _, h := range plan.Added {
 		fmt.Println("add     ", h)

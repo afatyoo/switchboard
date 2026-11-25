@@ -1,6 +1,6 @@
 # Switchboard
 
-SNI gateway for IMAPS and POP3S in front of Carbonio.
+SNI gateway for IMAPS, POP3S and SMTPS in front of Carbonio.
 
 > Status: in development. Manual and LDAP modes work in a single node lab.
 > Not production ready.
@@ -59,8 +59,21 @@ Rules:
   `switchboard remove` hands it back to sync.
 - Certificates whose domain lost its certificate or virtual hostname are removed.
   More than `max_remove` removals in one run are refused.
-- Use a dedicated LDAP account and `ldaps://` or StartTLS. The account can read
-  every domain private key, so treat its password like a private key.
+- Reading `zimbraSSLPrivateKey` needs a Carbonio LDAP admin. The built in
+  application accounts (`zmpostfix`, `zmamavis`, `zmnginx`) cannot read it, and
+  a narrower account would need a custom slapd ACL, which changes Carbonio.
+- On the Carbonio node itself, connect over the local socket and read the
+  password from Carbonio at run time, so no copy is stored and nothing crosses
+  the network:
+
+  ```yaml
+  ldap:
+    url: ldapi:///run/carbonio/run/ldapi
+    bind_dn: uid=zimbra,cn=admins,cn=zimbra
+    password_command: [runuser, -u, zextras, --, /opt/zextras/bin/zmlocalconfig, -s, -m, nokey, zimbra_ldap_password]
+  ```
+- On a separate host, use `ldaps://` or StartTLS and a `password_file` with mode
+  `0600`. `sync` warns when it runs over plain `ldap://`.
 
 Daily expiry check: install `deploy/systemd/switchboard-check.{service,timer}`
 and run `systemctl enable --now switchboard-check.timer`. Results go to the journal.

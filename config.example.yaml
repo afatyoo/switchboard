@@ -8,10 +8,11 @@ lock_file: /run/switchboard.lock
 
 # Used when mode: ldap. Read-only: Switchboard only searches and never writes.
 ldap:
-  url: ldaps://ldap.provider.example:636   # or ldap:// with starttls: true
+  url: ldaps://ldap.provider.example:636   # ldapi:///run/carbonio/run/ldapi on the Carbonio node
   starttls: false
-  bind_dn: uid=switchboard,cn=appaccts,cn=zimbra   # an account that can read zimbraSSLPrivateKey
-  password_file: /etc/switchboard/ldap.pass      # mode 0600
+  bind_dn: uid=zimbra,cn=admins,cn=zimbra   # must be able to read zimbraSSLPrivateKey
+  password_file: /etc/switchboard/ldap.pass      # mode 0600, or:
+  # password_command: [runuser, -u, zextras, --, /opt/zextras/bin/zmlocalconfig, -s, -m, nokey, zimbra_ldap_password]
   base_dn: ""                                    # "" searches the whole tree
   # ca_file: /etc/switchboard/ldap-ca.pem
   timeout: 15s
