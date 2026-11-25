@@ -94,9 +94,12 @@ func (l *Listener) handle(c net.Conn) {
 	_ = c.SetDeadline(time.Now().Add(l.PreTLSTimeout))
 	br := bufio.NewReaderSize(c, 1024)
 	if err := l.Proto.Client(br, c, l.Banner); err != nil {
-		if errors.Is(err, errClose) {
+		switch {
+		case errors.Is(err, errClose):
 			result = "closed before STARTTLS"
-		} else {
+		case errors.Is(err, ErrTLSOnPlainPort):
+			result = err.Error()
+		default:
 			result = "pre-TLS: " + err.Error()
 		}
 		return

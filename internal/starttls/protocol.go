@@ -40,8 +40,17 @@ const (
 	maxCommands = 20
 )
 
+// ErrTLSOnPlainPort means the client started a TLS handshake on a STARTTLS
+// port, usually a client set to "SSL/TLS" instead of "STARTTLS".
+var ErrTLSOnPlainPort = errors.New("client sent a TLS handshake on a STARTTLS port: set the client to STARTTLS, or use the implicit TLS port (465, 993, 995)")
+
 // readLine reads one CRLF or LF terminated line, refusing long lines.
 func readLine(r *bufio.Reader) (string, error) {
+	// 0x16 is the TLS handshake record type; no SMTP/IMAP/POP3 command starts
+	// with it.
+	if b, err := r.Peek(1); err == nil && b[0] == 0x16 {
+		return "", ErrTLSOnPlainPort
+	}
 	var b strings.Builder
 	for {
 		frag, isPrefix, err := r.ReadLine()
