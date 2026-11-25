@@ -2,8 +2,31 @@
 
 SNI gateway for IMAP, POP3 and SMTP submission (implicit TLS and STARTTLS) in front of Carbonio.
 
-> Status: in development. Manual and LDAP modes work in a single node lab.
-> Not production ready.
+> Status: v0.1.0, tested on a single Carbonio node (Ubuntu 24.04).
+> See [docs/PRODUCTION.md](docs/PRODUCTION.md) before using it in production.
+
+## Install (Debian/Ubuntu)
+
+Download the `.deb` from the [releases](https://github.com/afatyoo/switchboard/releases):
+
+```sh
+apt install ./switchboard_0.1.0_amd64.deb
+```
+
+The package installs files only. Mail ports keep going straight to Carbonio
+until you configure and enable it:
+
+```sh
+cp /usr/share/switchboard/config.example.yaml /etc/switchboard/config.yaml
+# edit config.yaml, and build /etc/haproxy/haproxy.cfg from
+# /usr/share/switchboard/haproxy.cfg.example
+systemctl enable --now switchboard-tproxy haproxy switchboard-proxy switchboard-watchdog
+```
+
+The watchdog adds the port redirects itself once the listeners answer.
+`apt remove switchboard` removes the redirects first, so clients fall back to
+Carbonio, then stops the services. `apt purge` also deletes `/etc/switchboard`;
+certificates in `/etc/haproxy/certs` are left alone.
 
 ## Problem
 
@@ -23,7 +46,7 @@ See [docs/CONCEPT.md](docs/CONCEPT.md) and [docs/LAB-RESULTS.md](docs/LAB-RESULT
 
 ```sh
 make linux                      # builds dist/switchboard-linux-amd64
-install -m 755 dist/switchboard-linux-amd64 /usr/local/bin/switchboard
+install -m 755 dist/switchboard-linux-amd64 /usr/bin/switchboard   # or use the .deb
 install -D -m 640 config.example.yaml /etc/switchboard/config.yaml
 
 switchboard add mail.customer1.com -cert cert.pem -key key.pem -chain chain.pem

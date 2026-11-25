@@ -281,6 +281,20 @@ the mailbox. Logs go to `/var/log/switchboard/`; health probes are not logged
 silent` for 127.0.0.1, and the TLS probe now waits for the server greeting so it
 is a complete session).
 
+## Debian package
+
+The `.deb` built by CI replaced the manual install on the lab node (manual
+units in `/etc/systemd/system` and binaries in `/usr/local` removed).
+
+| Test | Result |
+|---|---|
+| `apt install` on a node already running Switchboard | Installed, post-install message, nothing enabled by the package |
+| Units re-enabled from `/lib/systemd/system` | All services active on `/usr/bin/switchboard` |
+| All suites | 15 + 4 + 13 pass |
+| Reboot with packaged units | Services, six redirects, guard, TPROXY rules and upstream address back; all suites pass |
+| `apt remove` | Watchdog stopped, redirects, TPROXY rules and upstream address removed; 993, 587 and 143 answered directly by Carbonio; `/etc/switchboard` kept |
+| `apt install` again and enable services | Watchdog restored all six redirects by itself; all suites pass |
+
 ## Rollback
 
 ```sh

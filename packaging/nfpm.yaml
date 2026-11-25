@@ -1,0 +1,95 @@
+# nfpm package definition. Build with:
+#   VERSION=0.1.0 nfpm package --config packaging/nfpm.yaml --packager deb --target dist/
+name: switchboard
+arch: amd64
+platform: linux
+version: ${VERSION}
+version_schema: semver
+section: mail
+priority: optional
+maintainer: Afatyo <afatyo.ajeung@gmail.com>
+description: |
+  SNI gateway for Carbonio mail ports.
+  Serves per-domain certificates on IMAP, POP3 and SMTP submission
+  (implicit TLS through HAProxy, STARTTLS through its own proxy) without
+  changing Carbonio, keeps the real client IP with TPROXY and fails open to
+  Carbonio when it is unhealthy.
+vendor: Switchboard
+homepage: https://github.com/afatyoo/switchboard
+license: Proprietary
+
+depends:
+  - haproxy (>= 2.4)
+  - iptables
+  - iproute2
+recommends:
+  - rsyslog
+  - logrotate
+
+contents:
+  - src: dist/switchboard-linux-amd64
+    dst: /usr/bin/switchboard
+    file_info: { mode: 0755 }
+
+  # systemd units (installed, never enabled by the package)
+  - src: deploy/systemd/switchboard-proxy.service
+    dst: /lib/systemd/system/switchboard-proxy.service
+  - src: deploy/systemd/switchboard-watchdog.service
+    dst: /lib/systemd/system/switchboard-watchdog.service
+  - src: deploy/systemd/switchboard-tproxy.service
+    dst: /lib/systemd/system/switchboard-tproxy.service
+  - src: deploy/systemd/switchboard-sync.service
+    dst: /lib/systemd/system/switchboard-sync.service
+  - src: deploy/systemd/switchboard-sync.timer
+    dst: /lib/systemd/system/switchboard-sync.timer
+  - src: deploy/systemd/switchboard-check.service
+    dst: /lib/systemd/system/switchboard-check.service
+  - src: deploy/systemd/switchboard-check.timer
+    dst: /lib/systemd/system/switchboard-check.timer
+
+  # network helpers
+  - src: deploy/tproxy/setup.sh
+    dst: /usr/lib/switchboard/tproxy-setup.sh
+    file_info: { mode: 0755 }
+  - src: deploy/tproxy/rollback.sh
+    dst: /usr/lib/switchboard/tproxy-rollback.sh
+    file_info: { mode: 0755 }
+  - src: deploy/iptables/redirect.sh
+    dst: /usr/lib/switchboard/redirect.sh
+    file_info: { mode: 0755 }
+  - src: deploy/iptables/guard.sh
+    dst: /usr/lib/switchboard/guard.sh
+    file_info: { mode: 0755 }
+  - src: deploy/iptables/rollback.sh
+    dst: /usr/lib/switchboard/redirect-rollback.sh
+    file_info: { mode: 0755 }
+
+  # examples and integrations (copied into place by the admin)
+  - src: config.example.yaml
+    dst: /usr/share/switchboard/config.example.yaml
+  - src: deploy/haproxy/haproxy.cfg
+    dst: /usr/share/switchboard/haproxy.cfg.example
+  - src: deploy/prometheus/switchboard-rules.yml
+    dst: /usr/share/switchboard/prometheus/switchboard-rules.yml
+  - src: deploy/rsyslog/30-switchboard.conf
+    dst: /usr/share/switchboard/rsyslog/30-switchboard.conf
+  - src: deploy/rsyslog/switchboard.logrotate
+    dst: /usr/share/switchboard/rsyslog/switchboard.logrotate
+  - src: README.md
+    dst: /usr/share/doc/switchboard/README.md
+  - src: CHANGELOG.md
+    dst: /usr/share/doc/switchboard/CHANGELOG.md
+  - src: docs/
+    dst: /usr/share/doc/switchboard/docs/
+
+  - dst: /etc/switchboard
+    type: dir
+    file_info: { mode: 0750 }
+  - dst: /var/lib/switchboard
+    type: dir
+    file_info: { mode: 0750 }
+
+scripts:
+  postinstall: packaging/scripts/postinst.sh
+  preremove: packaging/scripts/prerm.sh
+  postremove: packaging/scripts/postrm.sh
