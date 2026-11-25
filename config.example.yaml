@@ -1,0 +1,11 @@
+# /etc/switchboard/config.yaml
+mode: manual                 # manual (ldap planned for v0.2.0)
+cert_dir: /etc/haproxy/certs # HAProxy "crt" directory
+group: haproxy               # files are written root:<group> 0640
+# extra_ca: /etc/switchboard/extra-ca.pem   # trust an extra CA (labs, private CA)
+warn_days: 21
+lock_file: /run/switchboard.lock
+haproxy:
+  check_cmd: [haproxy, -c, -q, -f, /etc/haproxy/haproxy.cfg]
+  reload_cmd: [systemctl, reload, haproxy]
+  timeout: 30s

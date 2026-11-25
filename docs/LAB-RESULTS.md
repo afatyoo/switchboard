@@ -101,6 +101,19 @@ again. Remaining risk: HAProxy picks a random source port per backend
 connection (`clientip`, not `client`), so a conntrack collision with the
 client's own connection is possible but unlikely.
 
+## switchboard CLI (manual mode)
+
+| Test | Result |
+|---|---|
+| `add` valid certificate for a new domain | Installed, HAProxy reloaded, SNI serves it |
+| `add` with certificate for another hostname | Rejected |
+| `add` with non matching key | Rejected |
+| `add` with hostname `../../etc/x` | Rejected |
+| `add` certificate with 10 days left | Installed with expiry warning |
+| `check` with an expiring certificate | Exit 1, listed as warning |
+| `remove` | File gone, SNI falls back to default certificate |
+| Staging files after all operations | None left |
+
 ## Rollback
 
 ```sh
