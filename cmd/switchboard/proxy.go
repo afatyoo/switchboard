@@ -9,8 +9,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/afatyoo/switchboard/internal/config"
+	"github.com/afatyoo/switchboard/internal/metrics"
 	"github.com/afatyoo/switchboard/internal/starttls"
 )
 
@@ -39,6 +41,23 @@ func cmdProxy(cfg config.Config) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	errc := make(chan error, len(cfg.Proxy.Listeners))
+	stats := &starttls.Stats{}
+	if cfg.Proxy.StatsFile != "" {
+		go func() {
+			t := time.NewTicker(10 * time.Second)
+			defer t.Stop()
+			for {
+				if err := metrics.WriteJSON(cfg.Proxy.StatsFile, stats.Snapshot()); err != nil {
+					logger.Printf("stats file: %v", err)
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+				}
+			}
+		}()
+	}
 	for _, lc := range cfg.Proxy.Listeners {
 		p, err := starttls.ByName(lc.Protocol)
 		if err != nil {
@@ -54,6 +73,7 @@ func cmdProxy(cfg config.Config) error {
 			Transparent: cfg.Proxy.Transparent,
 			MaxPerIP:    cfg.Proxy.MaxPerIP,
 			Log:         logger,
+			Stats:       stats,
 		}
 		go func() { errc <- l.Serve(ctx) }()
 	}

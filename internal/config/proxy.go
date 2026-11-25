@@ -14,6 +14,7 @@ type Proxy struct {
 	UpstreamVerifyName string          `yaml:"upstream_verify_name"`
 	UpstreamCA         string          `yaml:"upstream_ca"`
 	MaxPerIP           int             `yaml:"max_per_ip"`
+	StatsFile          string          `yaml:"stats_file"` // snapshot read by the watchdog for metrics
 	Listeners          []ProxyListener `yaml:"listeners"`
 }
 

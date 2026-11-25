@@ -274,6 +274,24 @@ func TestImplicitTLSOnStartTLSPortClosesFast(t *testing.T) {
 	}
 }
 
+func TestStatsCategories(t *testing.T) {
+	s := &Stats{}
+	for _, r := range []string{"ok", "ok", ErrTLSOnPlainPort.Error(), "upstream TLS: x", "pre-TLS: EOF", "too many connections from this IP"} {
+		s.begin("smtp")
+		s.end("smtp", r)
+	}
+	snap := s.Snapshot()
+	want := map[string]int64{"ok": 2, "tls_on_plain_port": 1, "upstream_error": 1, "pretls_error": 1, "limited": 1}
+	for k, v := range want {
+		if snap.Connections["smtp"][k] != v {
+			t.Errorf("%s = %d, want %d", k, snap.Connections["smtp"][k], v)
+		}
+	}
+	if snap.Active["smtp"] != 0 {
+		t.Errorf("active = %d", snap.Active["smtp"])
+	}
+}
+
 func TestPerIPLimit(t *testing.T) {
 	l := &Listener{MaxPerIP: 2}
 	if !l.acquire("1.2.3.4") || !l.acquire("1.2.3.4") || l.acquire("1.2.3.4") {

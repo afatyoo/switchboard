@@ -29,8 +29,9 @@ type Config struct {
 		BaseDN       string        `yaml:"base_dn"`
 		CAFile       string        `yaml:"ca_file"`
 		Timeout      time.Duration `yaml:"timeout"`
-		StateFile    string        `yaml:"state_file"` // hostnames installed by sync
-		MaxRemove    int           `yaml:"max_remove"` // refuse bigger removals in one run
+		StateFile    string        `yaml:"state_file"`  // hostnames installed by sync
+		StatusFile   string        `yaml:"status_file"` // result of the last sync, for metrics
+		MaxRemove    int           `yaml:"max_remove"`  // refuse bigger removals in one run
 	} `yaml:"ldap"`
 	Proxy    Proxy    `yaml:"proxy"`
 	Watchdog Watchdog `yaml:"watchdog"`
@@ -55,6 +56,8 @@ func Default() Config {
 	c.LDAP.Timeout = 15 * time.Second
 	c.LDAP.StateFile = "/var/lib/switchboard/ldap-managed.json"
 	c.LDAP.MaxRemove = 5
+	c.LDAP.StatusFile = "/var/lib/switchboard/sync-status.json"
+	c.Proxy.StatsFile = "/run/switchboard/proxy-stats.json"
 	c.Watchdog.Interval = 5 * time.Second
 	c.Watchdog.FailAfter = 3
 	c.Watchdog.RecoverAfter = 3

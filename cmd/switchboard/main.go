@@ -109,7 +109,7 @@ func run(args []string) error {
 	case "proxy":
 		return cmdProxy(cfg)
 	case "watchdog":
-		return cmdWatchdog(cfg)
+		return cmdWatchdog(cfg, st, opts)
 	case "list":
 		return cmdList(st, opts, false)
 	case "check":

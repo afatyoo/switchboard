@@ -77,6 +77,35 @@ sh deploy/iptables/guard.sh && netfilter-persistent save
 
 See [docs/PRODUCTION.md](docs/PRODUCTION.md) for what is still missing before production.
 
+## Prometheus metrics and alerts
+
+With `watchdog.metrics_file` set, `switchboard watchdog` writes
+`switchboard.prom` for the node_exporter textfile collector every round, so an
+existing node_exporter publishes it and Prometheus needs no new scrape job. On
+Carbonio the collector directory is `/opt/zextras/zmstat/prometheus/`.
+
+| Metric | Meaning |
+|---|---|
+| `switchboard_listener_up{port,listener}` | Last health probe succeeded |
+| `switchboard_redirect_active{port}` | 1 normal, 0 during fail-open |
+| `switchboard_failopen_total{port}` | Fail-open events since the watchdog started |
+| `switchboard_certificate_valid{hostname}` | Certificate validates (key, name, chain, dates) |
+| `switchboard_certificate_expiry_timestamp_seconds{hostname}` | notAfter |
+| `switchboard_sync_last_run_timestamp_seconds`, `switchboard_sync_last_run_success` | LDAP sync status |
+| `switchboard_proxy_sessions_total{protocol,result}` | STARTTLS proxy sessions by outcome |
+| `switchboard_proxy_sessions_active{protocol}` | Open STARTTLS proxy sessions |
+
+Alert rules: [`deploy/prometheus/switchboard-rules.yml`](deploy/prometheus/switchboard-rules.yml)
+(fail-open, listener down, watchdog stale, certificate expiring or invalid,
+sync failing or stale, proxy upstream errors). On Carbonio copy it to
+`/etc/carbonio/carbonio-prometheus/rules/` and send `SIGHUP` to Prometheus.
+Routing alerts to email or chat is Alertmanager's job.
+
+```yaml
+watchdog:
+  metrics_file: /opt/zextras/zmstat/prometheus/switchboard.prom
+```
+
 ## Self-signed infrastructure certificate
 
 Switchboard works with a self-signed Carbonio infrastructure certificate as

@@ -1,0 +1,93 @@
+# Prometheus alert rules for Switchboard.
+# Metrics come from the node_exporter textfile collector (switchboard.prom,
+# written by switchboard watchdog). On Carbonio, copy this file to
+# /etc/carbonio/carbonio-prometheus/rules/ and reload Prometheus.
+groups:
+  - name: switchboard
+    rules:
+      - alert: SwitchboardFailOpen
+        expr: switchboard_redirect_active == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Switchboard fail-open on port {{ $labels.port }}"
+          description: "Clients on port {{ $labels.port }} reach Carbonio directly and see the infrastructure certificate instead of the customer certificate."
+
+      - alert: SwitchboardListenerDown
+        expr: switchboard_listener_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Switchboard listener {{ $labels.listener }} (port {{ $labels.port }}) is not answering"
+          description: "Check haproxy.service (993, 995, 465) or switchboard-proxy.service (587, 143, 110)."
+
+      - alert: SwitchboardWatchdogStale
+        expr: time() - switchboard_watchdog_last_tick_timestamp_seconds > 120
+        labels:
+          severity: critical
+        annotations:
+          summary: "Switchboard watchdog has not reported for over 2 minutes"
+          description: "switchboard-watchdog.service may be down, so fail-open and metrics are not working."
+
+      - alert: SwitchboardMetricsMissing
+        expr: absent(switchboard_watchdog_last_tick_timestamp_seconds)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No Switchboard metrics"
+          description: "switchboard.prom is missing from the node_exporter textfile directory."
+
+      - alert: SwitchboardCertificateExpiringSoon
+        expr: (switchboard_certificate_expiry_timestamp_seconds - time()) / 86400 < 21
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Certificate for {{ $labels.hostname }} expires in {{ $value | humanize }} days"
+          description: "Renew it in Carbonio (LDAP mode) or with switchboard add (manual mode)."
+
+      - alert: SwitchboardCertificateInvalid
+        expr: switchboard_certificate_valid == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Certificate for {{ $labels.hostname }} is invalid"
+          description: "Expired, key mismatch, hostname not covered or chain does not verify. Run switchboard check."
+
+      - alert: SwitchboardSyncFailing
+        expr: switchboard_sync_last_run_success == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Switchboard LDAP sync is failing"
+          description: "New or renewed domain certificates are not reaching IMAP/POP3/SMTP. Check journalctl -u switchboard-sync."
+
+      - alert: SwitchboardSyncStale
+        expr: time() - switchboard_sync_last_run_timestamp_seconds > 3600
+        labels:
+          severity: warning
+        annotations:
+          summary: "Switchboard LDAP sync has not run for over an hour"
+          description: "Check switchboard-sync.timer."
+
+      - alert: SwitchboardProxyUpstreamErrors
+        expr: sum by (protocol) (rate(switchboard_proxy_sessions_total{result="upstream_error"}[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "STARTTLS proxy cannot reach Carbonio for {{ $labels.protocol }}"
+          description: "Upstream connect or TLS verification failing. If the infrastructure certificate changed, update upstream_ca / upstream_verify_name."
+
+      - alert: SwitchboardProxyStatsStale
+        expr: time() - switchboard_proxy_stats_timestamp_seconds > 120
+        labels:
+          severity: warning
+        annotations:
+          summary: "STARTTLS proxy statistics are stale"
+          description: "switchboard-proxy.service may be hung or down."

@@ -33,6 +33,14 @@ proxy:
     - {protocol: imap, listen: "0.0.0.0:10143", upstream: "HOST_IP:143"}
     - {protocol: pop3, listen: "0.0.0.0:10110", upstream: "HOST_IP:110"}
 
+watchdog:
+  interval: 5s
+  fail_after: 3
+  recover_after: 3
+  # node_exporter textfile collector file; empty disables metrics
+  metrics_file: /var/lib/node_exporter/textfile/switchboard.prom
+  # ports default to 993/995/465 (tls check) and 587/143/110 (banner check)
+
 haproxy:
   check_cmd: [haproxy, -c, -q, -f, /etc/haproxy/haproxy.cfg]
   reload_cmd: [systemctl, reload, haproxy]

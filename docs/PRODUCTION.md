@@ -10,7 +10,7 @@ item stands. Status: `done`, `partial`, `open`.
 | 1 | Fail-open watchdog | done | `switchboard watchdog` removes the redirect for a port whose listener stops answering, so clients reach Carbonio directly (infrastructure certificate) instead of failing. Re-adds it after recovery. |
 | 2 | IPv6 | partial | Not supported. Listeners bind IPv4 only. Do not publish AAAA records for customer hostnames while Switchboard is in front, or add ip6tables and TPROXY rules first. |
 | 3 | Internal ports closed | done | `deploy/iptables/guard.sh` drops direct connections to 10xxx unless they arrived through the redirect. |
-| 4 | Monitoring and alerts | open | Alert on service down, sync failure, `switchboard check` exit 1. Ship HAProxy and proxy logs to central syslog. Metrics endpoint for the proxy. |
+| 4 | Monitoring and alerts | partial | Metrics through the node_exporter textfile collector and 10 Prometheus alert rules, tested firing and resolving. Open: Alertmanager routing (email, chat), central syslog for HAProxy and proxy logs. |
 | 5 | Brute force protection | partial | Carbonio sees the real client IP (TPROXY), so its own limits and fail2ban on its logs work. Tune HAProxy and proxy per IP limits to real traffic. |
 | 6 | Load, soak and failure tests | partial | Watchdog and reboot tested in the lab. Missing: thousands of IDLE sessions, multi day soak, client matrix (Outlook, Apple Mail, Android, iOS, devices). |
 | 7 | Security review of the STARTTLS proxy | open | Fuzz the pre-TLS parsers, external review. |

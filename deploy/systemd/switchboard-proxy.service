@@ -18,6 +18,9 @@ ProtectHome=yes
 PrivateTmp=yes
 ReadOnlyPaths=/etc/haproxy /etc/switchboard
 LimitNOFILE=65536
+# /run/switchboard/proxy-stats.json for metrics
+RuntimeDirectory=switchboard
+RuntimeDirectoryMode=0755
 
 [Install]
 WantedBy=multi-user.target
