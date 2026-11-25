@@ -75,10 +75,37 @@ Tests ran from a Python client (3.14) on another machine.
   `basicConstraints=CA:TRUE` and `keyUsage=keyCertSign`, leaf certificates
   `extendedKeyUsage=serverAuth`. Switchboard validation should check this.
 
+## Transparent mode (real client IP in Carbonio)
+
+Without it, Carbonio logs `oip=127.0.0.1` for every session. With TPROXY,
+HAProxy connects to Carbonio Proxy using the client IP as source, still
+without any Carbonio change.
+
+- HAProxy backend: `server proxy1 HOST_IP:993 source 0.0.0.0 usesrc clientip`
+  (a host address, not 127.0.0.1) and `setcap cap_net_admin,cap_net_raw`
+  in `global`. Capabilities need a restart, not a reload.
+- Policy routing ([`deploy/tproxy/setup.sh`](../deploy/tproxy/setup.sh)):
+  replies from sport 993/995 to non-local addresses get mark `0x51`,
+  `ip rule fwmark 0x51 lookup 151`, table 151 has `local 0.0.0.0/0 dev lo`,
+  and `-m socket --transparent` on `lo` keeps them going to HAProxy.
+- Persisted with [`switchboard-tproxy.service`](../deploy/systemd/switchboard-tproxy.service).
+
+| Test | Result |
+|---|---|
+| Full test suite (16 checks) | All pass |
+| Carbonio `mailbox.log` | `oip=` shows the real client IP |
+| Reboot | HAProxy, redirect, mangle rules and ip rule come back; all tests pass once Carbonio is up |
+
+With the real IP visible, Carbonio's own per IP login limits can be enabled
+again. Remaining risk: HAProxy picks a random source port per backend
+connection (`clientip`, not `client`), so a conntrack collision with the
+client's own connection is possible but unlikely.
+
 ## Rollback
 
 ```sh
-deploy/iptables/rollback.sh
+systemctl disable --now switchboard-tproxy   # removes TPROXY routing
+deploy/iptables/rollback.sh                  # removes 993/995 redirect
 systemctl disable --now haproxy
 ```
 

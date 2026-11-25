@@ -1,0 +1,14 @@
+[Unit]
+Description=Switchboard transparent mode routing
+After=network-online.target netfilter-persistent.service
+Wants=network-online.target
+Before=haproxy.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/switchboard-tproxy-setup
+ExecStop=/usr/local/sbin/switchboard-tproxy-rollback
+
+[Install]
+WantedBy=multi-user.target
