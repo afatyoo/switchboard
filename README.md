@@ -122,7 +122,9 @@ Prometheus at the bundled Alertmanager by adding
 `/etc/carbonio/carbonio-prometheus/alertmanager/switchboard.yml` with
 `- targets: ["localhost:9095"]`, then add a route for `alertname=~"Switchboard.*"`
 to Alertmanager's config. The sender must be an existing mailbox, Carbonio
-rejects unknown local senders.
+rejects unknown local senders. Use `group_by: [alertname]` on that route: one
+HAProxy outage fires two alert names for three ports, and grouping per port
+sends six mails instead of two.
 
 ```yaml
 watchdog:
