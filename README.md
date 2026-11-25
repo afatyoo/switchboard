@@ -109,20 +109,35 @@ sudo apt install ./switchboard_0.1.0_amd64.deb
 ```
 
 The package enables nothing. Mail ports keep going straight to Carbonio until
-you configure Switchboard and start it:
+you run setup:
 
 ```bash
-sudo cp /usr/share/switchboard/config.example.yaml /etc/switchboard/config.yaml
+sudo switchboard setup -dry-run
 ```
-
-Edit `/etc/switchboard/config.yaml`, build `/etc/haproxy/haproxy.cfg` from
-`/usr/share/switchboard/haproxy.cfg.example`, then:
 
 ```bash
-sudo systemctl enable --now switchboard-tproxy haproxy switchboard-proxy switchboard-watchdog
+sudo switchboard setup
 ```
 
-The watchdog adds the port redirects by itself once the listeners answer.
+`setup` detects the Carbonio node (hostname, infrastructure certificate and
+whether it is public or self-signed, LDAP socket, listening mail ports,
+HAProxy version, TPROXY support, IPv6), shows the plan, backs up existing
+files, writes `/etc/switchboard/config.yaml` and `/etc/haproxy/haproxy.cfg`,
+starts the services and checks every port through Switchboard. If any port
+does not work, it restores the previous files and services and hands the
+ports back to Carbonio.
+
+| Flag | Default |
+|---|---|
+| `-mode manual\|ldap\|auto` | `auto`: LDAP when the Carbonio ldapi socket exists |
+| `-ports 993,995,587` | every Carbonio mail port that is listening |
+| `-default-cert bundle.pem` | infrastructure certificate (use a public one if that is self-signed) |
+| `-extra-ca ca.pem` | none; trust a private CA for customer certificates |
+| `-yes` | ask before applying |
+| `-dry-run` | print the plan and generated files, change nothing |
+
+To configure by hand instead, start from `/usr/share/switchboard/config.example.yaml`
+and `/usr/share/switchboard/haproxy.cfg.example`.
 
 ## Configuration
 
@@ -152,6 +167,7 @@ self-signed certificate, so keep the fail-open alert on.
 
 | Command | What it does |
 |---|---|
+| `switchboard setup [-dry-run] [-yes] …` | Detect Carbonio, write the configuration, activate with rollback |
 | `switchboard add HOST -cert F -key F [-chain F]` | Validate and install a certificate |
 | `switchboard remove HOST` | Remove a certificate |
 | `switchboard list` | Show installed certificates and their status |

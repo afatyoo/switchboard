@@ -295,6 +295,21 @@ units in `/etc/systemd/system` and binaries in `/usr/local` removed).
 | `apt remove` | Watchdog stopped, redirects, TPROXY rules and upstream address removed; 993, 587 and 143 answered directly by Carbonio; `/etc/switchboard` kept |
 | `apt install` again and enable services | Watchdog restored all six redirects by itself; all suites pass |
 
+## switchboard setup
+
+| Test | Result |
+|---|---|
+| `setup -dry-run` on the lab node | Detected Carbonio 26.9, self-signed infrastructure certificate (Carbonio CA), ldapi socket, metrics directory, six ports, HAProxy 2.8, TPROXY; generated files match the hand-made setup |
+| Purge the package, reinstall, `setup -yes` from a clean state | Done in 16 s, all six ports verified; all suites pass, real client IP logged |
+| `setup` again over a working install | Every existing file backed up first, all ports verified |
+| `setup` with a wrong upstream address (forced failure) | Verification failed on 993/995/465, files restored byte for byte, services restarted with the old configuration, watchdog restored the redirects, all suites pass |
+
+Found during testing: without `-default-cert`, a self-signed infrastructure
+certificate becomes the default certificate for clients without SNI; setup
+warns about it. Private CA customer certificates need `-extra-ca`. The
+STARTTLS listener probe only checks the proxy greeting, not the connection to
+Carbonio, so a broken upstream on 587/143/110 is not caught by setup's check.
+
 ## Rollback
 
 ```sh

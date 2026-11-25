@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `switchboard setup`: detects the Carbonio node, writes the configuration,
+  activates Switchboard and verifies every port, with automatic rollback.
+  Flags: `-dry-run`, `-yes`, `-mode`, `-ports`, `-default-cert`, `-extra-ca`,
+  `-upstream-ip`, `-timeout`.
+
+### Changed
+
+- Debian package metadata now says MIT.
+
 ## v0.1.0
 
 First release. Tested on a single Carbonio 26.9 node on Ubuntu 24.04.
