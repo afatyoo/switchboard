@@ -9,6 +9,7 @@
   <a href="https://github.com/afatyoo/switchboard/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/afatyoo/switchboard/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Go" src="https://img.shields.io/github/go-mod/go-version/afatyoo/switchboard">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Ubuntu%2022.04%20%7C%2024.04-orange">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/afatyoo/switchboard"></a>
 </p>
 
 ---
@@ -269,8 +270,7 @@ Packages are built by the `package` workflow on every pull request; pushing a
 
 ## License
 
-No open source license has been chosen yet. All rights reserved by the author
-until a license file is added.
+[MIT](LICENSE) © 2026 Muhammad Afatyo Ikhsan
 
 Switchboard is not affiliated with or endorsed by Zextras. Carbonio is a
 trademark of its owner.
