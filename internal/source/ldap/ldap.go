@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"strings"
 	"time"
 
 	goldap "github.com/go-ldap/ldap/v3"
@@ -27,9 +26,13 @@ type Config struct {
 	StartTLS     bool
 	BindDN       string
 	PasswordFile string
-	BaseDN       string // "" searches the whole tree
-	CAFile       string // CA for ldaps/StartTLS, empty uses system roots
-	Timeout      time.Duration
+	// PasswordCommand prints the password on stdout. Used instead of
+	// PasswordFile, for example to read it from Carbonio localconfig at run
+	// time so no copy is kept on disk.
+	PasswordCommand []string
+	BaseDN          string // "" searches the whole tree
+	CAFile          string // CA for ldaps/StartTLS, empty uses system roots
+	Timeout         time.Duration
 }
 
 const filter = "(&(objectClass=zimbraDomain)(zimbraVirtualHostname=*)(zimbraSSLCertificate=*)(zimbraSSLPrivateKey=*))"
@@ -38,9 +41,9 @@ var attrs = []string{"zimbraDomainName", "zimbraVirtualHostname", "zimbraSSLCert
 
 // Fetch returns every domain that has virtual hostnames and a certificate.
 func Fetch(c Config) ([]Domain, error) {
-	pw, err := os.ReadFile(c.PasswordFile)
+	pw, err := password(c)
 	if err != nil {
-		return nil, fmt.Errorf("ldap password file: %w", err)
+		return nil, err
 	}
 	u, err := url.Parse(c.URL)
 	if err != nil {
@@ -74,7 +77,7 @@ func Fetch(c Config) ([]Domain, error) {
 			return nil, fmt.Errorf("ldap starttls: %w", err)
 		}
 	}
-	if err := conn.Bind(c.BindDN, strings.TrimSpace(string(pw))); err != nil {
+	if err := conn.Bind(c.BindDN, pw); err != nil {
 		return nil, fmt.Errorf("ldap bind: %w", err)
 	}
 

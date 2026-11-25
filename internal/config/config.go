@@ -25,6 +25,7 @@ type Config struct {
 		StartTLS     bool          `yaml:"starttls"`
 		BindDN       string        `yaml:"bind_dn"`
 		PasswordFile string        `yaml:"password_file"`
+		PasswordCmd  []string      `yaml:"password_command"`
 		BaseDN       string        `yaml:"base_dn"`
 		CAFile       string        `yaml:"ca_file"`
 		Timeout      time.Duration `yaml:"timeout"`
@@ -77,8 +78,11 @@ func (c Config) validate() error {
 	switch c.Mode {
 	case "manual":
 	case "ldap":
-		if c.LDAP.URL == "" || c.LDAP.BindDN == "" || c.LDAP.PasswordFile == "" {
-			return errors.New("mode ldap needs ldap.url, ldap.bind_dn and ldap.password_file")
+		if c.LDAP.URL == "" || c.LDAP.BindDN == "" {
+			return errors.New("mode ldap needs ldap.url and ldap.bind_dn")
+		}
+		if c.LDAP.PasswordFile == "" && len(c.LDAP.PasswordCmd) == 0 {
+			return errors.New("mode ldap needs ldap.password_file or ldap.password_command")
 		}
 		if c.LDAP.StateFile == "" {
 			return errors.New("ldap.state_file is required")

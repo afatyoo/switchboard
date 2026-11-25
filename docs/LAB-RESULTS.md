@@ -134,6 +134,31 @@ Lab domain with two virtual hostnames, `mail.` covered by the certificate and
 The lab bound as the Carbonio admin LDAP user over plain `ldap://` on the same
 host. Production should use a dedicated read-only account and TLS.
 
+## LDAP over the local socket
+
+| Test | Result |
+|---|---|
+| Built in accounts `zmpostfix`, `zmamavis`, `zmnginx` reading domain certificates | No access, admin DN required |
+| `sync` over `ldapi:///run/carbonio/run/ldapi` | Works, no TCP connection to 389 |
+| Password from `zmlocalconfig` via `password_command` | Works, stored copy removed |
+
+The Carbonio LDAP on the lab node does not offer StartTLS (`ldap_starttls_supported = 0`).
+
+## SMTPS (port 465)
+
+HAProxy frontend on 10465, backend to Postfix 465 with `usesrc clientip`,
+iptables redirect 465 to 10465, TPROXY mark extended to source port 465.
+Postfix on 465 uses `smtpd_relay_restrictions = permit_sasl_authenticated,reject`,
+so `mynetworks` does not allow relay on this port.
+
+| Test | Result |
+|---|---|
+| SNI `mail.customer1.test` and lab domain on 465 | Domain certificate served |
+| AUTH and send through the gateway | OK |
+| Unauthenticated relay attempt | Rejected `554 5.7.1 Access denied` |
+| Postfix log | `connect from unknown[<real client IP>]` |
+| IMAP/POP3 regression suite after the change | All pass |
+
 ## Rollback
 
 ```sh

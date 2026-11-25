@@ -11,8 +11,8 @@ iptables -t mangle -N SWITCHBOARD 2>/dev/null || iptables -t mangle -F SWITCHBOA
 iptables -t mangle -A SWITCHBOARD -j MARK --set-mark $MARK
 iptables -t mangle -A SWITCHBOARD -j ACCEPT
 # replies leaving Carbonio Proxy towards a client IP
-iptables -t mangle -C OUTPUT -p tcp -m multiport --sports 993,995 ! -d 127.0.0.0/8 -m comment --comment switchboard -j SWITCHBOARD 2>/dev/null ||
-  iptables -t mangle -A OUTPUT -p tcp -m multiport --sports 993,995 ! -d 127.0.0.0/8 -m comment --comment switchboard -j SWITCHBOARD
+iptables -t mangle -C OUTPUT -p tcp -m multiport --sports 993,995,465 ! -d 127.0.0.0/8 -m comment --comment switchboard -j SWITCHBOARD 2>/dev/null ||
+  iptables -t mangle -A OUTPUT -p tcp -m multiport --sports 993,995,465 ! -d 127.0.0.0/8 -m comment --comment switchboard -j SWITCHBOARD
 # the same packets coming back in on lo, matched to HAProxy's transparent socket
 iptables -t mangle -C PREROUTING -i lo -p tcp -m socket --transparent -m comment --comment switchboard -j SWITCHBOARD 2>/dev/null ||
   iptables -t mangle -A PREROUTING -i lo -p tcp -m socket --transparent -m comment --comment switchboard -j SWITCHBOARD
