@@ -35,10 +35,18 @@ Proof of concept on a single Carbonio node. No Carbonio configuration was change
 | Same tests from another machine via port 993/995 | Same results, redirect works |
 | IMAP greeting, CAPABILITY, LOGOUT through gateway | OK, IDLE advertised |
 | POP3 greeting and CAPA through gateway | OK |
+| IMAP LOGIN, SELECT, APPEND, FETCH with a test account | OK |
+| IMAP IDLE push (`EXISTS`) on an open session | OK |
+| `systemctl reload haproxy` while IDLE is open | Session survived, push still delivered, NOOP OK |
+| Same account through both SNI names | OK |
+| POP3 USER/PASS, STAT, RETR | OK |
+| 6 wrong passwords, then correct login | Rejected, then accepted (no lockout of gateway) |
+
+Tests ran from a Python client (3.14) on another machine.
 
 ## Not tested yet
 
-- Real login with a mailbox account, mail download, IDLE over 30 minutes
+- IDLE over 30 minutes (HAProxy timeouts are 30m, clients usually re-IDLE every 29m)
 - Outlook, Thunderbird and mobile clients
 - HAProxy reload during open sessions
 - Load test
@@ -56,6 +64,16 @@ Proof of concept on a single Carbonio node. No Carbonio configuration was change
 - The wildcard infrastructure certificate does not cover the
   node FQDN (two labels deep). Backend verification uses a name that matches
   the wildcard.
+
+- Carbonio Advanced with 2FA policy rejects the normal account password on
+  IMAP/POP3 (`Unsupported 2FA for service Imap`). This happens with or without
+  the gateway. Mail clients need an app credential:
+  `carbonio auth credential add <account> label <name> service imap,pop3`.
+- Carbonio logs `oip=127.0.0.1` for every session through the gateway, so the
+  real client IP is lost. Logging and blocking must use HAProxy logs.
+- Python 3.13+ rejects a CA without `keyUsage`. Lab CAs must set
+  `basicConstraints=CA:TRUE` and `keyUsage=keyCertSign`, leaf certificates
+  `extendedKeyUsage=serverAuth`. Switchboard validation should check this.
 
 ## Rollback
 
