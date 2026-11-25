@@ -19,7 +19,7 @@ its own certificate on IMAP, POP3 and SMTP submission, the same way Carbonio
 already does for webmail. Mail clients that connect to `mail.customer.com`
 get the `mail.customer.com` certificate instead of a certificate warning.
 
-> **Status:** v0.1.0, tested on a single Carbonio 26.9 node on Ubuntu 24.04.
+> **Status:** v0.2.0, tested on a single Carbonio 26.9 node on Ubuntu 24.04.
 > Read [docs/PRODUCTION.md](docs/PRODUCTION.md) before using it in production.
 
 ## Contents
@@ -107,7 +107,7 @@ sha256sum -c SHA256SUMS --ignore-missing
 ```
 
 ```bash
-sudo apt install ./switchboard_0.1.0_amd64.deb
+sudo apt install ./switchboard_0.2.0_amd64.deb
 ```
 
 The package enables nothing. Mail ports keep going straight to Carbonio until
