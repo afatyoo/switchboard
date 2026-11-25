@@ -29,6 +29,7 @@ type Listener struct {
 	Transparent bool        // dial upstream with the client IP as source (TPROXY)
 	MaxPerIP    int
 	Log         *log.Logger
+	Stats       *Stats // optional, shared between listeners
 
 	PreTLSTimeout    time.Duration
 	HandshakeTimeout time.Duration
@@ -80,8 +81,10 @@ func (l *Listener) handle(c net.Conn) {
 	start := time.Now()
 	ip, _, _ := net.SplitHostPort(c.RemoteAddr().String())
 	sni, result := "-", "ok"
+	l.Stats.begin(l.Proto.Name())
 	defer func() {
 		c.Close()
+		l.Stats.end(l.Proto.Name(), result)
 		l.Log.Printf("%s client=%s sni=%s result=%q duration=%s", l.Proto.Name(), ip, sni, result, time.Since(start).Round(time.Millisecond))
 	}()
 
@@ -95,7 +98,8 @@ func (l *Listener) handle(c net.Conn) {
 	br := bufio.NewReaderSize(c, 1024)
 	if err := l.Proto.Client(br, c, l.Banner); err != nil {
 		switch {
-		case errors.Is(err, errClose):
+		case errors.Is(err, errClose), errors.Is(err, io.EOF):
+			// QUIT/LOGOUT, or the peer hung up (health checks do this).
 			result = "closed before STARTTLS"
 		case errors.Is(err, ErrTLSOnPlainPort):
 			result = err.Error()

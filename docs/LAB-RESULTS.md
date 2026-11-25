@@ -212,6 +212,26 @@ Measured interruption on the node: SMTP about 5 s, IMAP about 15 to 20 s.
 | HAProxy started | Customer certificate, verify OK |
 | Real client IP in Carbonio | Still logged |
 
+## Prometheus metrics and alerts
+
+Carbonio's bundled Prometheus and node_exporter were used without editing
+their configuration: metrics go to the textfile collector directory, rules to
+the `rules/` directory that `prometheus.yml` already loads.
+
+| Test | Result |
+|---|---|
+| `switchboard.prom` written every watchdog round | Listener, redirect, fail-open, certificate, sync and proxy metrics present |
+| Prometheus query `switchboard_redirect_active` | All six ports `1` |
+| Rules loaded | 10 rules, all healthy |
+| HAProxy stopped | `SwitchboardFailOpen` and `SwitchboardListenerDown` for 993/995/465 pending after about 100 s, firing after about 3 min |
+| HAProxy started | Alerts resolved, redirects restored |
+
+Watchdog health probes were first counted as proxy `pretls_error`; a peer that
+hangs up before STARTTLS is now counted as `closed`.
+
+The lab Prometheus has no Alertmanager configured, so alerts are visible in
+Prometheus only.
+
 ## Rollback
 
 ```sh

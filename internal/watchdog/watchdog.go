@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/afatyoo/switchboard/internal/metrics"
 )
 
 // Port is one redirected port.
@@ -45,13 +47,40 @@ type Watchdog struct {
 	FailAfter    int // consecutive failures before removing the redirect
 	RecoverAfter int // consecutive successes before restoring it
 	Log          *log.Logger
+	// AfterTick runs after every round, for example to write metrics.
+	AfterTick func(w *Watchdog)
 
-	state map[int]*portState
+	state    map[int]*portState
+	lastTick time.Time
 }
 
 type portState struct {
 	fails, oks int
 	open       bool // redirect active
+	up         bool // last probe succeeded
+	failOpens  int  // times the redirect was removed
+}
+
+// Collect adds the watchdog's metrics to b.
+func (w *Watchdog) Collect(b *metrics.Builder) {
+	for _, p := range w.Ports {
+		st := w.state[p.Public]
+		if st == nil {
+			continue
+		}
+		l := metrics.Labels{"port": strconv.Itoa(p.Public), "listener": strconv.Itoa(p.Local)}
+		b.Gauge("switchboard_listener_up", "1 if the Switchboard listener answered the last health probe.", l, boolf(st.up))
+		b.Gauge("switchboard_redirect_active", "1 if traffic for the port goes through Switchboard, 0 during fail-open.", metrics.Labels{"port": strconv.Itoa(p.Public)}, boolf(st.open))
+		b.Counter("switchboard_failopen_total", "Times the watchdog removed the redirect since it started.", metrics.Labels{"port": strconv.Itoa(p.Public)}, float64(st.failOpens))
+	}
+	b.Gauge("switchboard_watchdog_last_tick_timestamp_seconds", "Unix time of the last watchdog round.", nil, float64(w.lastTick.Unix()))
+}
+
+func boolf(v bool) float64 {
+	if v {
+		return 1
+	}
+	return 0
 }
 
 // Run blocks until ctx is cancelled.
@@ -103,11 +132,18 @@ func (w *Watchdog) Tick(ctx context.Context) {
 			return
 		}
 	}
+	defer func() {
+		w.lastTick = time.Now()
+		if w.AfterTick != nil {
+			w.AfterTick(w)
+		}
+	}()
 	for _, p := range w.Ports {
 		st := w.state[p.Public]
 		pctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 		err := w.Probe(pctx, p)
 		cancel()
+		st.up = err == nil
 		if err != nil {
 			st.fails++
 			st.oks = 0
@@ -117,6 +153,7 @@ func (w *Watchdog) Tick(ctx context.Context) {
 					continue
 				}
 				st.open = false
+				st.failOpens++
 				w.Log.Printf("watchdog: port %d: listener %d unhealthy (%v), redirect removed, clients go to Carbonio directly", p.Public, p.Local, err)
 			}
 			continue

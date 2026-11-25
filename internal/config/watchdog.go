@@ -12,6 +12,9 @@ type Watchdog struct {
 	FailAfter    int            `yaml:"fail_after"`
 	RecoverAfter int            `yaml:"recover_after"`
 	Ports        []WatchdogPort `yaml:"ports"`
+	// MetricsFile is a node_exporter textfile collector file (*.prom).
+	// Empty disables metrics.
+	MetricsFile string `yaml:"metrics_file"`
 }
 
 // WatchdogPort maps a public port to its Switchboard listener.

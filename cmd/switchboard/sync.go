@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
+
+	"github.com/afatyoo/switchboard/internal/metrics"
 
 	"github.com/afatyoo/switchboard/internal/cert"
 	"github.com/afatyoo/switchboard/internal/config"
@@ -12,6 +15,21 @@ import (
 )
 
 func cmdSync(cfg config.Config, st *store.Store, opts cert.Options, dry bool) error {
+	status := metrics.SyncStatus{Time: time.Now().Unix()}
+	err := runSync(cfg, st, opts, dry, &status)
+	status.OK = err == nil
+	if err != nil {
+		status.Error = err.Error()
+	}
+	if !dry && cfg.LDAP.StatusFile != "" {
+		if werr := metrics.WriteJSON(cfg.LDAP.StatusFile, status); werr != nil {
+			fmt.Println("warning  status file:", werr)
+		}
+	}
+	return err
+}
+
+func runSync(cfg config.Config, st *store.Store, opts cert.Options, dry bool, status *metrics.SyncStatus) error {
 	domains, err := ldap.Fetch(ldap.Config{
 		URL:             cfg.LDAP.URL,
 		StartTLS:        cfg.LDAP.StartTLS,
@@ -50,6 +68,10 @@ func cmdSync(cfg config.Config, st *store.Store, opts cert.Options, dry bool) er
 	if readErr != nil {
 		return readErr
 	}
+	status.Domains = len(domains)
+	status.Changes = len(plan.Changes)
+	status.Skipped = len(plan.Skipped)
+	status.Warnings = len(plan.Warnings)
 
 	if strings.HasPrefix(cfg.LDAP.URL, "ldap://") && !cfg.LDAP.StartTLS {
 		fmt.Println("warning  ldap:// without starttls sends the bind password and private keys in clear text; use ldapi:// on the same host or ldaps://")
