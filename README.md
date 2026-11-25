@@ -77,6 +77,22 @@ sh deploy/iptables/guard.sh && netfilter-persistent save
 
 See [docs/PRODUCTION.md](docs/PRODUCTION.md) for what is still missing before production.
 
+## Self-signed infrastructure certificate
+
+Switchboard works with a self-signed Carbonio infrastructure certificate as
+long as customers use their virtual hostnames: they only ever see the public
+per-domain certificates. Three settings matter:
+
+1. Backend verification must trust the Carbonio CA. In HAProxy use
+   `ca-file /etc/haproxy/carbonio-ca.pem verifyhost <infra hostname>`, in the
+   proxy set `upstream_ca` and `upstream_verify_name`. Copy the CA from
+   `/opt/zextras/conf/ca/ca.pem` and update the copy if Carbonio's CA changes.
+   Never use `verify none`.
+2. `default_cert` (clients without SNI or with an unknown name) should be a
+   public certificate, not the self-signed infrastructure one.
+3. During fail-open clients reach Carbonio directly and see the self-signed
+   certificate, so alert on watchdog events.
+
 ## LDAP mode
 
 With `mode: ldap`, `switchboard sync` reads every Carbonio domain that has
