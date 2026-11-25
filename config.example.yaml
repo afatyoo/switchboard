@@ -29,9 +29,9 @@ proxy:
   # upstream_ca: /etc/switchboard/upstream-ca.pem
   max_per_ip: 50
   listeners:
-    - {protocol: smtp, listen: "0.0.0.0:10587", upstream: "HOST_IP:587"}
-    - {protocol: imap, listen: "0.0.0.0:10143", upstream: "HOST_IP:143"}
-    - {protocol: pop3, listen: "0.0.0.0:10110", upstream: "HOST_IP:110"}
+    - {protocol: smtp, listen: "0.0.0.0:10587", upstream: "10.255.255.1:587"}
+    - {protocol: imap, listen: "0.0.0.0:10143", upstream: "10.255.255.1:143"}
+    - {protocol: pop3, listen: "0.0.0.0:10110", upstream: "10.255.255.1:110"}
 
 watchdog:
   interval: 5s

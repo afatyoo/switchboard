@@ -11,6 +11,11 @@ set -e
 MARK=0x51
 TABLE=151
 PORTS=993,995,465,587,143,110
+# Dedicated local address Switchboard uses to reach Carbonio. Keeps upstream
+# connection tuples distinct from client tuples (no conntrack collisions when
+# many clients share one IP, e.g. behind NAT).
+UPSTREAM_IP=${UPSTREAM_IP:-10.255.255.1}
+ip -4 addr show dev lo | grep -q " $UPSTREAM_IP/" || ip addr add $UPSTREAM_IP/32 dev lo
 
 iptables -t mangle -N SWITCHBOARD 2>/dev/null || iptables -t mangle -F SWITCHBOARD
 iptables -t mangle -A SWITCHBOARD -j MARK --set-mark $MARK

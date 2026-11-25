@@ -232,6 +232,55 @@ hangs up before STARTTLS is now counted as `closed`.
 The lab Prometheus has no Alertmanager configured, so alerts are visible in
 Prometheus only.
 
+## Production validation
+
+### Fuzzing (`internal/starttls/fuzz_test.go`)
+
+60 seconds each for `FuzzSMTPClient`, `FuzzIMAPClient`, `FuzzPOP3Client` and
+`FuzzUpstream`: no panic, STARTTLS never accepted with data still buffered or
+without a STARTTLS command in the input, responses bounded.
+
+### Reboot
+
+All services, the six redirects, the guard, TPROXY rules and the policy route
+came back on their own; the node was serving again about 300 s after the reboot
+command once Carbonio had started. All suites passed afterwards (one APPEND
+failure right after boot, not repeated in three further runs).
+
+### Load (`tools/loadtest`)
+
+| Test | Result |
+|---|---|
+| 2000 unauthenticated TLS sessions (1000 via 993, 1000 via 143), first run | 993: 1000/1000. 143: 971/1000, 14 failures were upstream dial timeouts |
+| Cause | Upstream connection to the public address used the same tuple as a client connection when the kernel picked the same source port (conntrack collision) |
+| Fix | Upstream on a dedicated lo address `10.255.255.1` |
+| Same test after the fix | 2000/2000, no failures. Peak: HAProxy 84 MB and 2092 fds, switchboard 131 MB and 2013 fds, load average 0.45 |
+| Unauthenticated sessions | Closed by Carbonio's proxy after 60 s (`timeout 60` in auth state), not by Switchboard |
+| 140 logged-in IDLE sessions (10 accounts, 70 via 993, 70 via 143), 5 minutes, HAProxy reload in the middle | 140/140 alive to the end, 0 dropped |
+| Carbonio limits seen | 15 IMAP sessions per account (`Too many IMAP sessions (16 > 15)`), `zimbraImapMaxConnections` 200 |
+
+### Client matrix
+
+| Client | Ports | Result |
+|---|---|---|
+| Thunderbird (macOS) | 993 | Works with the customer certificate (user test) |
+| Python imaplib, poplib, smtplib | all six | Full suites pass |
+| curl 8.7 (libcurl) | 587 STARTTLS, 465 | Send OK, certificate verified |
+| openssl s_client | 993, 995, 465 | TLS 1.3 and 1.2 OK, TLS 1.1 refused |
+| Python with forced versions | 587, 143, 110 | TLS 1.3 and 1.2 OK |
+
+### Alerts and logs
+
+Prometheus pointed at Carbonio's bundled Alertmanager through its
+`alertmanager/*.yml` service discovery directory; a route for
+`alertname=~"Switchboard.*"` sends email through local Postfix. First attempt
+was rejected by Postfix because the sender address did not exist; with an
+existing mailbox as sender, stopping HAProxy produced alert emails delivered to
+the mailbox. Logs go to `/var/log/switchboard/`; health probes are not logged
+(proxy skips loopback probes, HAProxy uses `tcp-request content set-log-level
+silent` for 127.0.0.1, and the TLS probe now waits for the server greeting so it
+is a complete session).
+
 ## Rollback
 
 ```sh
