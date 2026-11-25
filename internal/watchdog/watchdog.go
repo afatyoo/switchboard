@@ -8,14 +8,9 @@
 package watchdog
 
 import (
-	"bufio"
 	"context"
-	"crypto/tls"
-	"fmt"
 	"log"
-	"net"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/afatyoo/switchboard/internal/metrics"
@@ -25,7 +20,7 @@ import (
 type Port struct {
 	Public int    // port clients connect to
 	Local  int    // Switchboard listener
-	Check  string // "tls" (implicit TLS listener) or "banner" (STARTTLS proxy)
+	Check  string // "tls" (implicit TLS listener) or "starttls" (STARTTLS proxy; "banner" is the old name)
 }
 
 // Firewall adds and removes the redirect rule for a port.
@@ -169,43 +164,4 @@ func (w *Watchdog) Tick(ctx context.Context) {
 			w.Log.Printf("watchdog: port %d: listener %d healthy, redirect restored", p.Public, p.Local)
 		}
 	}
-}
-
-// DefaultProbe connects to 127.0.0.1:<local>. For "tls" it completes a TLS
-// handshake; for "banner" it expects a protocol greeting.
-func DefaultProbe(ctx context.Context, p Port) error {
-	var d net.Dialer
-	c, err := d.DialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(p.Local)))
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-	if dl, ok := ctx.Deadline(); ok {
-		_ = c.SetDeadline(dl)
-	}
-	switch p.Check {
-	case "tls":
-		// Health only: the certificate is checked elsewhere (switchboard check).
-		// Waiting for the server greeting over TLS proves the whole path,
-		// including HAProxy's verified connection to Carbonio.
-		tc := tls.Client(c, &tls.Config{InsecureSkipVerify: true, ServerName: "watchdog.invalid"})
-		if err := tc.HandshakeContext(ctx); err != nil {
-			return err
-		}
-		return greeting(tc)
-	case "banner":
-		return greeting(c)
-	}
-	return fmt.Errorf("unknown check %q", p.Check)
-}
-
-func greeting(c net.Conn) error {
-	l, err := bufio.NewReader(c).ReadString('\n')
-	if err != nil {
-		return err
-	}
-	if !(strings.HasPrefix(l, "220") || strings.HasPrefix(l, "* OK") || strings.HasPrefix(l, "+OK")) {
-		return fmt.Errorf("unexpected greeting %q", strings.TrimSpace(l))
-	}
-	return nil
 }

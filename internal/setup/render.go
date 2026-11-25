@@ -144,7 +144,7 @@ watchdog:
 {{- end}}
   ports:
 {{- range .Opts.Ports}}
-    - {public: {{.Public}}, local: {{.Local}}, check: {{if .Implicit}}tls{{else}}banner{{end}}}
+    - {public: {{.Public}}, local: {{.Local}}, check: {{if .Implicit}}tls{{else}}starttls{{end}}}
 {{- end}}
 `))
 

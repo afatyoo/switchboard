@@ -30,7 +30,7 @@ func cmdWatchdog(cfg config.Config, st *store.Store, opts cert.Options) error {
 	w := &watchdog.Watchdog{
 		Ports:        ports,
 		Firewall:     watchdog.IPTables{},
-		Probe:        watchdog.DefaultProbe,
+		Probe:        (&watchdog.Checker{DeepEvery: cfg.Watchdog.DeepEvery}).Probe,
 		Interval:     cfg.Watchdog.Interval,
 		FailAfter:    cfg.Watchdog.FailAfter,
 		RecoverAfter: cfg.Watchdog.RecoverAfter,
