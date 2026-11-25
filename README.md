@@ -1,6 +1,6 @@
 # Switchboard
 
-SNI gateway for IMAPS, POP3S and SMTPS in front of Carbonio.
+SNI gateway for IMAP, POP3 and SMTP submission (implicit TLS and STARTTLS) in front of Carbonio.
 
 > Status: in development. Manual and LDAP modes work in a single node lab.
 > Not production ready.
@@ -36,6 +36,24 @@ switchboard remove mail.customer1.com
 covered, it is expired or not yet valid, the chain does not verify, or a chain
 CA lacks `keyUsage keyCertSign`. Every change runs `haproxy -c` first and is
 rolled back if the check fails, then HAProxy is reloaded (open sessions stay up).
+
+## STARTTLS ports (587, 143, 110)
+
+HAProxy cannot answer the plain text part of a STARTTLS session, so
+`switchboard proxy` does it: it greets the client, offers only STARTTLS,
+terminates TLS with the certificate chosen by SNI, opens STARTTLS to the real
+server (with the client IP as source when `transparent: true`) and then
+forwards bytes. Login and everything after it stay with Carbonio.
+
+Before TLS it accepts only a handful of commands (SMTP `EHLO HELO STARTTLS NOOP
+RSET QUIT`, IMAP `CAPABILITY NOOP STARTTLS LOGOUT`, POP3 `CAPA STLS QUIT`),
+limits line length and command count, never advertises PIPELINING and drops the
+connection if anything follows STARTTLS in the same packet (command injection).
+
+```sh
+install -m 644 deploy/systemd/switchboard-proxy.service /etc/systemd/system/
+systemctl enable --now switchboard-proxy
+```
 
 ## LDAP mode
 

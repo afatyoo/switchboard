@@ -27,6 +27,7 @@ Commands:
   list                                              show installed certificates
   check                                             validate all certificates (exit 1 on problems)
   sync [-dry-run]                                   (mode ldap) install certificates from Carbonio LDAP
+  proxy                                             run the STARTTLS proxy (587, 143, 110) in the foreground
   version                                          print the version
 `
 
@@ -104,6 +105,8 @@ func run(args []string) error {
 			return err
 		}
 		return withLock(cfg.LockFile, func() error { return cmdSync(cfg, st, opts, *dry) })
+	case "proxy":
+		return cmdProxy(cfg)
 	case "list":
 		return cmdList(st, opts, false)
 	case "check":

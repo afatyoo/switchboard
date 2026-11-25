@@ -8,11 +8,9 @@ mail client --TLS (SNI)--> Switchboard (HAProxy) --TLS--> Carbonio Proxy
                              certificates managed by the Go tool
 ```
 
-Ports 993, 995 and 465 go to Switchboard. Everything else keeps going to Carbonio.
-
-Port 587 (STARTTLS) cannot be covered: TLS starts inside the SMTP session, so
-HAProxy has no SNI to choose a certificate from. Clients that should see the
-customer name when sending must use port 465.
+Ports 993, 995 and 465 go to HAProxy. Ports 587, 143 and 110 go to the
+STARTTLS proxy (`switchboard proxy`). Everything else, including port 25 and
+HTTPS, keeps going to Carbonio.
 
 ## Deployment
 
@@ -40,7 +38,6 @@ A broken certificate is rejected and the previous one stays in place.
 
 - Carbonio sees the gateway IP, not the client IP. IP based brute force
   protection may block the gateway and therefore every user.
-- STARTTLS ports (143, 110, 587) are not covered.
 - Clients without SNI receive the default certificate.
 - The gateway holds customer private keys and must be hardened.
 - The gateway is a new point of failure.
