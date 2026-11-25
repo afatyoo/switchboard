@@ -43,36 +43,7 @@ func (s *Store) path(hostname string) (string, error) {
 // Install writes data for hostname, checks HAProxy, reloads it and restores
 // the previous state if anything fails before the reload.
 func (s *Store) Install(hostname string, data []byte) error {
-	dst, err := s.path(hostname)
-	if err != nil {
-		return err
-	}
-	prev, prevErr := os.ReadFile(dst)
-	hadPrev := prevErr == nil
-
-	// Staging file lives outside Dir so HAProxy never loads a half-written
-	// file, but on the same filesystem so the rename is atomic.
-	tmp, err := os.CreateTemp(filepath.Dir(s.Dir), ".switchboard-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if err := s.writeFile(tmp, data); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp.Name(), dst); err != nil {
-		return err
-	}
-
-	if err := s.HAProxy.Check(); err != nil {
-		if hadPrev {
-			_ = s.restore(dst, prev)
-		} else {
-			_ = os.Remove(dst)
-		}
-		return fmt.Errorf("rolled back: %w", err)
-	}
-	return s.HAProxy.Reload()
+	return s.Apply(map[string][]byte{hostname: data})
 }
 
 // Remove deletes the file for hostname, checks HAProxy and reloads it.
@@ -81,21 +52,86 @@ func (s *Store) Remove(hostname string) error {
 	if err != nil {
 		return err
 	}
-	prev, err := os.ReadFile(dst)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("no certificate for %s", hostname)
-		}
-		return err
+	if _, err := os.Stat(dst); errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("no certificate for %s", hostname)
 	}
-	if err := os.Remove(dst); err != nil {
-		return err
+	return s.Apply(map[string][]byte{hostname: nil})
+}
+
+// Apply writes (non-nil data) or deletes (nil data) several files, then runs
+// one HAProxy check. If the check fails every file is restored and HAProxy is
+// not reloaded. An empty change set does nothing.
+func (s *Store) Apply(changes map[string][]byte) error {
+	if len(changes) == 0 {
+		return nil
+	}
+	type undo struct {
+		dst     string
+		prev    []byte
+		hadPrev bool
+	}
+	var undos []undo
+	rollback := func() {
+		for i := len(undos) - 1; i >= 0; i-- {
+			u := undos[i]
+			if u.hadPrev {
+				_ = s.restore(u.dst, u.prev)
+			} else {
+				_ = os.Remove(u.dst)
+			}
+		}
+	}
+
+	hosts := make([]string, 0, len(changes))
+	for h := range changes {
+		hosts = append(hosts, h)
+	}
+	sort.Strings(hosts)
+	for _, h := range hosts {
+		dst, err := s.path(h)
+		if err != nil {
+			rollback()
+			return err
+		}
+		prev, prevErr := os.ReadFile(dst)
+		u := undo{dst: dst, prev: prev, hadPrev: prevErr == nil}
+		if data := changes[h]; data == nil {
+			if !u.hadPrev {
+				continue
+			}
+			if err := os.Remove(dst); err != nil {
+				rollback()
+				return err
+			}
+		} else if err := s.restore(dst, data); err != nil {
+			// restore writes through a staging file outside Dir, so HAProxy
+			// never sees a half-written file.
+			rollback()
+			return err
+		}
+		undos = append(undos, u)
+	}
+	if len(undos) == 0 {
+		return nil
 	}
 	if err := s.HAProxy.Check(); err != nil {
-		_ = s.restore(dst, prev)
+		rollback()
 		return fmt.Errorf("rolled back: %w", err)
 	}
 	return s.HAProxy.Reload()
+}
+
+// Read returns the current file content for hostname, or nil if absent.
+func (s *Store) Read(hostname string) ([]byte, error) {
+	dst, err := s.path(hostname)
+	if err != nil {
+		return nil, err
+	}
+	b, err := os.ReadFile(dst)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	return b, err
 }
 
 // Entry is one installed certificate.

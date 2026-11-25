@@ -114,6 +114,26 @@ client's own connection is possible but unlikely.
 | `remove` | File gone, SNI falls back to default certificate |
 | Staging files after all operations | None left |
 
+## LDAP mode
+
+Lab domain with two virtual hostnames, `mail.` covered by the certificate and
+`webmail.` not, certificate saved with `zmdomaincertmgr savecrt`.
+
+| Test | Result |
+|---|---|
+| `sync -dry-run` | Plan shown, nothing changed |
+| First `sync` | `mail.` installed, `webmail.` skipped (not covered), SNI serves it |
+| Second `sync` | No changes, no reload |
+| Certificate renewed in Carbonio | `sync` updates the file |
+| Wrong LDAP password | Bind error, exit 1, installed file untouched |
+| `switchboard add` on a synced hostname | Manual takes over, sync skips it |
+| `switchboard remove` on it | Sync installs it again on the next run |
+| Domain certificate cleared in Carbonio | `sync` removes the file, SNI falls back to default |
+| Manually added hostnames | Never touched by sync |
+
+The lab bound as the Carbonio admin LDAP user over plain `ldap://` on the same
+host. Production should use a dedicated read-only account and TLS.
+
 ## Rollback
 
 ```sh
