@@ -22,6 +22,7 @@ var version = "dev"
 const usage = `Usage: switchboard [-config FILE] COMMAND [ARGS]
 
 Commands:
+  setup [-dry-run] [-mode M] [-ports P] [-yes]      detect Carbonio, write the config and activate Switchboard
   add HOSTNAME -cert FILE -key FILE [-chain FILE]   validate and install a certificate
   remove HOSTNAME                                   remove a certificate
   list                                              show installed certificates
@@ -55,6 +56,10 @@ func run(args []string) error {
 	if cmd == "version" {
 		fmt.Println(version)
 		return nil
+	}
+	if cmd == "setup" {
+		// Runs before the config is loaded: it writes the config.
+		return cmdSetup(rest)
 	}
 
 	cfg, err := config.Load(*cfgPath)
