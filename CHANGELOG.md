@@ -1,6 +1,9 @@
 # Changelog
 
-## v0.2.0
+Every release has a codename from the history of the telephone exchange, in
+alphabetical order. See [docs/CODENAMES.md](docs/CODENAMES.md).
+
+## v0.2.0 "Bakelite"
 
 Installation becomes one command, and fail-open now covers the STARTTLS ports
 properly. Tested on a Carbonio 26.9 node on Ubuntu 24.04.
@@ -33,7 +36,7 @@ properly. Tested on a Carbonio 26.9 node on Ubuntu 24.04.
   on 587, 143 and 110, because the proxy answers the greeting itself.
   `setup` had the same blind spot.
 
-## v0.1.0
+## v0.1.0 "Almon"
 
 First release. Tested on a single Carbonio 26.9 node on Ubuntu 24.04.
 
