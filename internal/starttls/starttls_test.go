@@ -249,6 +249,31 @@ func TestLongLineAndCommandLimit(t *testing.T) {
 	}
 }
 
+func TestImplicitTLSOnStartTLSPortClosesFast(t *testing.T) {
+	p := newPKI(t)
+	for _, proto := range []string{"smtp", "imap", "pop3"} {
+		addr := startProxy(t, proto, p, fakeUpstream(t, proto, p.upstream))
+		start := time.Now()
+		c, err := net.Dial("tcp", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// A client set to "SSL/TLS" sends a ClientHello right away.
+		tc := tls.Client(c, &tls.Config{ServerName: "mail.customer1.test", RootCAs: p.ca.Pool()})
+		_ = tc.SetDeadline(time.Now().Add(5 * time.Second))
+		if err := tc.Handshake(); err == nil {
+			t.Fatalf("%s: handshake succeeded on a STARTTLS port", proto)
+		}
+		if d := time.Since(start); d > 2*time.Second {
+			t.Fatalf("%s: client waited %s, want a fast close", proto, d)
+		}
+		c.Close()
+	}
+	if _, err := readLine(bufio.NewReader(strings.NewReader("\x16\x03\x01\x02\x00"))); err != ErrTLSOnPlainPort {
+		t.Fatalf("readLine: %v", err)
+	}
+}
+
 func TestPerIPLimit(t *testing.T) {
 	l := &Listener{MaxPerIP: 2}
 	if !l.acquire("1.2.3.4") || !l.acquire("1.2.3.4") || l.acquire("1.2.3.4") {
