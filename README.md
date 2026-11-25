@@ -1,216 +1,276 @@
-# Switchboard
+<h1 align="center">Switchboard</h1>
 
-SNI gateway for IMAP, POP3 and SMTP submission (implicit TLS and STARTTLS) in front of Carbonio.
+<p align="center">
+  Per-domain TLS certificates for Carbonio mail ports, without changing Carbonio.
+</p>
 
-> Status: v0.1.0, tested on a single Carbonio node (Ubuntu 24.04).
-> See [docs/PRODUCTION.md](docs/PRODUCTION.md) before using it in production.
+<p align="center">
+  <a href="https://github.com/afatyoo/switchboard/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/afatyoo/switchboard"></a>
+  <a href="https://github.com/afatyoo/switchboard/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/afatyoo/switchboard/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Go" src="https://img.shields.io/github/go-mod/go-version/afatyoo/switchboard">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Ubuntu%2022.04%20%7C%2024.04-orange">
+</p>
 
-## Install (Debian/Ubuntu)
+---
 
-Download the `.deb` from the [releases](https://github.com/afatyoo/switchboard/releases):
+Switchboard sits in front of a Carbonio node and gives every customer domain
+its own certificate on IMAP, POP3 and SMTP submission, the same way Carbonio
+already does for webmail. Mail clients that connect to `mail.customer.com`
+get the `mail.customer.com` certificate instead of a certificate warning.
 
-```sh
-apt install ./switchboard_0.1.0_amd64.deb
+> **Status:** v0.1.0, tested on a single Carbonio 26.9 node on Ubuntu 24.04.
+> Read [docs/PRODUCTION.md](docs/PRODUCTION.md) before using it in production.
+
+## Contents
+
+- [Why](#why)
+- [How it works](#how-it-works)
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Monitoring and logs](#monitoring-and-logs)
+- [Operations](#operations)
+- [Security](#security)
+- [Limitations](#limitations)
+- [Development](#development)
+- [Documentation](#documentation)
+- [License](#license)
+
+## Why
+
+Carbonio selects a certificate by SNI for HTTPS only. IMAPS, POP3S and SMTP
+always present the infrastructure certificate, so a customer who sets up
+their mail client with their own virtual hostname sees a certificate error.
+The usual workarounds are one multi-SAN certificate that must be reissued
+for every new customer, or telling every customer to use the provider's
+hostname. Switchboard removes the need for either.
+
+## How it works
+
+```text
+                         ┌──────────────── Carbonio node ─────────────────┐
+mail client              │                                                │
+ SNI: mail.customer.com  │  993/995/465 ─► HAProxy ────────┐              │
+ ───────────────────────►│                                 ├─► Carbonio   │
+                         │  587/143/110 ─► switchboard ────┘   proxy/MTA  │
+                         │                 proxy (STARTTLS)               │
+                         │      ▲ per-domain certificate, chosen by SNI   │
+                         │      └ manual (switchboard add) or LDAP sync   │
+                         └────────────────────────────────────────────────┘
 ```
 
-The package installs files only. Mail ports keep going straight to Carbonio
-until you configure and enable it:
+1. iptables redirects the public mail ports to Switchboard's listeners.
+2. HAProxy (implicit TLS) or `switchboard proxy` (STARTTLS) completes the TLS
+   handshake with the certificate that matches the client's SNI.
+3. A new, verified TLS connection goes to Carbonio, using the client's IP as
+   source address (TPROXY), so Carbonio and Postfix see and log the real client.
+4. Authentication, mailbox access and mail delivery stay entirely with Carbonio.
+5. If a Switchboard listener stops answering, the watchdog removes that port's
+   redirect and clients reach Carbonio directly (fail-open).
 
-```sh
-cp /usr/share/switchboard/config.example.yaml /etc/switchboard/config.yaml
-# edit config.yaml, and build /etc/haproxy/haproxy.cfg from
-# /usr/share/switchboard/haproxy.cfg.example
-systemctl enable --now switchboard-tproxy haproxy switchboard-proxy switchboard-watchdog
+## Features
+
+- **All client mail ports:** IMAPS 993, POP3S 995, SMTPS 465 through HAProxy;
+  submission 587, IMAP 143, POP3 110 (STARTTLS) through a small Go proxy.
+- **No Carbonio changes:** no edits to its proxy templates, Postfix or LDAP.
+- **Real client IP** preserved end to end with TPROXY.
+- **Two certificate sources:**
+  - *manual:* `switchboard add mail.customer.com -cert … -key …`
+  - *LDAP:* reads domain certificates and virtual hostnames from Carbonio, so a
+    certificate uploaded in the Admin Panel reaches IMAP, POP3 and SMTP too.
+- **Safe changes:** every certificate is validated (key, hostname, dates,
+  chain) and every change is checked with `haproxy -c` and rolled back on failure.
+- **Fail-open watchdog** per port.
+- **Prometheus metrics and alert rules**, rsyslog and logrotate configuration.
+- **Debian package** that installs files only and hands the ports back to
+  Carbonio on removal.
+
+## Requirements
+
+- Ubuntu 22.04 or 24.04, x86_64
+- Carbonio on the same node (single node or a proxy node)
+- HAProxy 2.4 or newer, iptables, iproute2 (pulled in by the package)
+- IPv4 for the customer hostnames (see [Limitations](#limitations))
+
+## Installation
+
+Download the package from the [latest release](https://github.com/afatyoo/switchboard/releases/latest)
+and check it:
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
 ```
 
-The watchdog adds the port redirects itself once the listeners answer.
-`apt remove switchboard` removes the redirects first, so clients fall back to
-Carbonio, then stops the services. `apt purge` also deletes `/etc/switchboard`;
-certificates in `/etc/haproxy/certs` are left alone.
-
-## Problem
-
-Carbonio Proxy serves per-domain certificates for HTTPS, but IMAPS and POP3S
-always get the infrastructure certificate. Mail clients that connect to a
-customer's virtual hostname see a certificate error.
-
-## Idea
-
-Switchboard sits in front of Carbonio Proxy. HAProxy selects the certificate
-by SNI, and a small Go tool manages those certificates. Carbonio configuration
-stays untouched.
-
-See [docs/CONCEPT.md](docs/CONCEPT.md) and [docs/LAB-RESULTS.md](docs/LAB-RESULTS.md).
-
-## Usage (manual mode)
-
-```sh
-make linux                      # builds dist/switchboard-linux-amd64
-install -m 755 dist/switchboard-linux-amd64 /usr/bin/switchboard   # or use the .deb
-install -D -m 640 config.example.yaml /etc/switchboard/config.yaml
-
-switchboard add mail.customer1.com -cert cert.pem -key key.pem -chain chain.pem
-switchboard list
-switchboard check               # exit 1 if a certificate is invalid or expiring
-switchboard remove mail.customer1.com
+```bash
+sudo apt install ./switchboard_0.1.0_amd64.deb
 ```
 
-`add` refuses a certificate when the key does not match, the hostname is not
-covered, it is expired or not yet valid, the chain does not verify, or a chain
-CA lacks `keyUsage keyCertSign`. Every change runs `haproxy -c` first and is
-rolled back if the check fails, then HAProxy is reloaded (open sessions stay up).
+The package enables nothing. Mail ports keep going straight to Carbonio until
+you configure Switchboard and start it:
 
-## STARTTLS ports (587, 143, 110)
-
-HAProxy cannot answer the plain text part of a STARTTLS session, so
-`switchboard proxy` does it: it greets the client, offers only STARTTLS,
-terminates TLS with the certificate chosen by SNI, opens STARTTLS to the real
-server (with the client IP as source when `transparent: true`) and then
-forwards bytes. Login and everything after it stay with Carbonio.
-
-Before TLS it accepts only a handful of commands (SMTP `EHLO HELO STARTTLS NOOP
-RSET QUIT`, IMAP `CAPABILITY NOOP STARTTLS LOGOUT`, POP3 `CAPA STLS QUIT`),
-limits line length and command count, never advertises PIPELINING and drops the
-connection if anything follows STARTTLS in the same packet (command injection).
-
-```sh
-install -m 644 deploy/systemd/switchboard-proxy.service /etc/systemd/system/
-systemctl enable --now switchboard-proxy
+```bash
+sudo cp /usr/share/switchboard/config.example.yaml /etc/switchboard/config.yaml
 ```
 
-## Fail-open watchdog and port guard
+Edit `/etc/switchboard/config.yaml`, build `/etc/haproxy/haproxy.cfg` from
+`/usr/share/switchboard/haproxy.cfg.example`, then:
 
-`switchboard watchdog` probes every Switchboard listener every 5 seconds (TLS
-handshake for 10993/10995/10465, protocol greeting for 10587/10143/10110). After
-3 failures it removes that port's redirect, so clients reach Carbonio directly
-with the infrastructure certificate instead of failing. After 3 successes it
-restores the redirect.
-
-`deploy/iptables/guard.sh` drops direct connections to the 10xxx listener ports
-from outside; only redirected traffic and local health checks reach them.
-
-The TPROXY rules mark only connections opened by Switchboard (connmark), so a
-client that goes straight to Carbonio is answered normally.
-
-```sh
-install -m 644 deploy/systemd/switchboard-watchdog.service /etc/systemd/system/
-systemctl enable --now switchboard-watchdog
-sh deploy/iptables/guard.sh && netfilter-persistent save
+```bash
+sudo systemctl enable --now switchboard-tproxy haproxy switchboard-proxy switchboard-watchdog
 ```
 
-See [docs/PRODUCTION.md](docs/PRODUCTION.md) for what is still missing before production.
+The watchdog adds the port redirects by itself once the listeners answer.
 
-## Upstream address
+## Configuration
 
-HAProxy and the STARTTLS proxy reach Carbonio on `10.255.255.1`, an address
-`deploy/tproxy/setup.sh` adds to `lo` (override with `UPSTREAM_IP`). Carbonio
-listens on `0.0.0.0`, so nothing changes on its side. Using the public address
-instead makes the upstream connection tuple identical to a client's own
-connection whenever the kernel picks the same source port, which happened for
-about 1.4% of sessions when 1000 clients shared one IP (a large office behind
-NAT looks exactly like that).
+All settings live in `/etc/switchboard/config.yaml`; the annotated example is
+[`config.example.yaml`](config.example.yaml). The parts that matter most:
 
-## Logs
+| Setting | Purpose |
+|---|---|
+| `mode` | `manual` or `ldap` |
+| `cert_dir` | Certificate directory shared by HAProxy and the proxy |
+| `ldap.*` | LDAP sync source (`ldapi:///run/carbonio/run/ldapi` on the Carbonio node) |
+| `proxy.*` | STARTTLS listeners, upstream address and verification name |
+| `watchdog.*` | Fail-open thresholds and the Prometheus metrics file |
 
-`deploy/rsyslog/30-switchboard.conf` writes `/var/log/switchboard/switchboard.log`
-(one line per STARTTLS session with client IP, SNI and result, plus watchdog
-events) and `/var/log/switchboard/haproxy.log`, with daily rotation from
-`deploy/rsyslog/switchboard.logrotate`. Uncomment the `omfwd` actions to forward
-to a central syslog server. Watchdog health probes from localhost are not logged.
+**Upstream address.** HAProxy and the proxy reach Carbonio on `10.255.255.1`,
+an address `switchboard-tproxy` adds to `lo`. Using the public address instead
+causes conntrack collisions when many clients share one IP (an office behind
+NAT).
 
-## Prometheus metrics and alerts
+**Self-signed infrastructure certificate.** Supported: customers only ever see
+their public per-domain certificates. Point HAProxy's `ca-file` and the
+proxy's `upstream_ca` at Carbonio's CA (`/opt/zextras/conf/ca/ca.pem`) and use a
+public certificate as `default_cert`. During fail-open clients see the
+self-signed certificate, so keep the fail-open alert on.
 
-With `watchdog.metrics_file` set, `switchboard watchdog` writes
-`switchboard.prom` for the node_exporter textfile collector every round, so an
-existing node_exporter publishes it and Prometheus needs no new scrape job. On
-Carbonio the collector directory is `/opt/zextras/zmstat/prometheus/`.
+## Usage
+
+| Command | What it does |
+|---|---|
+| `switchboard add HOST -cert F -key F [-chain F]` | Validate and install a certificate |
+| `switchboard remove HOST` | Remove a certificate |
+| `switchboard list` | Show installed certificates and their status |
+| `switchboard check` | Validate all certificates, exit 1 on problems |
+| `switchboard sync [-dry-run]` | LDAP mode: install certificates from Carbonio |
+| `switchboard proxy` | Run the STARTTLS proxy (systemd service) |
+| `switchboard watchdog` | Run the fail-open watchdog and metrics (systemd service) |
+| `switchboard version` | Print the version |
+
+Example, manual mode:
+
+```bash
+sudo switchboard add mail.customer.com -cert cert.pem -key key.pem -chain chain.pem
+sudo switchboard list
+```
+
+Example, LDAP mode, after uploading the domain certificate in Carbonio:
+
+```bash
+sudo switchboard sync -dry-run
+sudo systemctl enable --now switchboard-sync.timer
+```
+
+Sync only reads LDAP, never overwrites a manually added hostname, skips names
+the certificate does not cover, and refuses to remove more than `max_remove`
+certificates in one run.
+
+## Monitoring and logs
+
+**Metrics.** With `watchdog.metrics_file` set, the watchdog writes
+`switchboard.prom` for the node_exporter textfile collector, so no new scrape
+job is needed. On Carbonio the directory is `/opt/zextras/zmstat/prometheus/`.
 
 | Metric | Meaning |
 |---|---|
-| `switchboard_listener_up{port,listener}` | Last health probe succeeded |
 | `switchboard_redirect_active{port}` | 1 normal, 0 during fail-open |
-| `switchboard_failopen_total{port}` | Fail-open events since the watchdog started |
-| `switchboard_certificate_valid{hostname}` | Certificate validates (key, name, chain, dates) |
-| `switchboard_certificate_expiry_timestamp_seconds{hostname}` | notAfter |
-| `switchboard_sync_last_run_timestamp_seconds`, `switchboard_sync_last_run_success` | LDAP sync status |
-| `switchboard_proxy_sessions_total{protocol,result}` | STARTTLS proxy sessions by outcome |
-| `switchboard_proxy_sessions_active{protocol}` | Open STARTTLS proxy sessions |
+| `switchboard_listener_up{port,listener}` | Last health probe succeeded |
+| `switchboard_certificate_valid{hostname}` | Certificate validates |
+| `switchboard_certificate_expiry_timestamp_seconds{hostname}` | Expiry time |
+| `switchboard_sync_last_run_success` | LDAP sync status |
+| `switchboard_proxy_sessions_total{protocol,result}` | STARTTLS sessions by outcome |
 
-Alert rules: [`deploy/prometheus/switchboard-rules.yml`](deploy/prometheus/switchboard-rules.yml)
-(fail-open, listener down, watchdog stale, certificate expiring or invalid,
-sync failing or stale, proxy upstream errors). On Carbonio copy it to
-`/etc/carbonio/carbonio-prometheus/rules/` and send `SIGHUP` to Prometheus.
-Routing alerts to email or chat is Alertmanager's job. On Carbonio, point
-Prometheus at the bundled Alertmanager by adding
+**Alerts.** Ten rules in
+[`/usr/share/switchboard/prometheus/switchboard-rules.yml`](deploy/prometheus/switchboard-rules.yml):
+fail-open, listener down, watchdog stale, certificate expiring or invalid,
+sync failing, proxy upstream errors. On Carbonio copy the file to
+`/etc/carbonio/carbonio-prometheus/rules/`. To get them by email, add
 `/etc/carbonio/carbonio-prometheus/alertmanager/switchboard.yml` with
-`- targets: ["localhost:9095"]`, then add a route for `alertname=~"Switchboard.*"`
-to Alertmanager's config. The sender must be an existing mailbox, Carbonio
-rejects unknown local senders. Use `group_by: [alertname]` on that route: one
-HAProxy outage fires two alert names for three ports, and grouping per port
-sends six mails instead of two.
+`- targets: ["localhost:9095"]` and a route for `alertname=~"Switchboard.*"`
+(group by `alertname`, sender must be an existing mailbox).
 
-```yaml
-watchdog:
-  metrics_file: /opt/zextras/zmstat/prometheus/switchboard.prom
+**Logs.** Install `/usr/share/switchboard/rsyslog/30-switchboard.conf` and the
+logrotate file to get `/var/log/switchboard/switchboard.log` (one line per
+STARTTLS session with client IP, SNI and result, plus watchdog events) and
+`/var/log/switchboard/haproxy.log`. Uncomment `omfwd` to forward to a central
+syslog server.
+
+## Operations
+
+| Task | How |
+|---|---|
+| Hand ports back to Carbonio now | `sudo systemctl stop switchboard-watchdog && sudo /usr/lib/switchboard/redirect-rollback.sh` |
+| Upgrade | `sudo apt install ./switchboard_<new>_amd64.deb` (running services restart) |
+| Uninstall | `sudo apt remove switchboard` (removes redirects first, then stops services) |
+| Remove everything | `sudo apt purge switchboard` (also deletes `/etc/switchboard`; certificates stay) |
+
+## Security
+
+- The pre-TLS part of STARTTLS accepts a minimal command set, limits line
+  length and command count, never offers PIPELINING and drops connections that
+  send data after STARTTLS (command injection). The parsers are fuzzed.
+- Backend connections to Carbonio are always verified; there is no
+  `verify none` fallback.
+- TLS 1.2 is the minimum on every port.
+- Direct access to the internal listener ports is blocked.
+- LDAP mode needs the Carbonio LDAP admin DN, because the built-in application
+  accounts cannot read domain private keys. On the Carbonio node, use `ldapi`
+  with `password_command` so no copy of the password is stored.
+- Certificate files are `root:haproxy 0640`.
+
+Report security issues privately to the maintainer rather than in a public issue.
+
+## Limitations
+
+- IPv4 only. Do not publish AAAA records for customer hostnames.
+- One node. For several Carbonio proxy nodes, run Switchboard on each.
+- Carbonio limits apply first: 15 IMAP sessions per account and 200 per mailbox
+  server by default, 60 s for unauthenticated proxy sessions.
+- Not yet tested with Outlook, Apple Mail, Android, iOS, or on RHEL family
+  systems (`.rpm` is planned).
+
+## Development
+
+```bash
+make vet test        # go vet, gofmt, unit tests with -race
+make linux           # dist/switchboard-linux-amd64
 ```
 
-## Self-signed infrastructure certificate
-
-Switchboard works with a self-signed Carbonio infrastructure certificate as
-long as customers use their virtual hostnames: they only ever see the public
-per-domain certificates. Three settings matter:
-
-1. Backend verification must trust the Carbonio CA. In HAProxy use
-   `ca-file /etc/haproxy/carbonio-ca.pem verifyhost <infra hostname>`, in the
-   proxy set `upstream_ca` and `upstream_verify_name`. Copy the CA from
-   `/opt/zextras/conf/ca/ca.pem` and update the copy if Carbonio's CA changes.
-   Never use `verify none`.
-2. `default_cert` (clients without SNI or with an unknown name) should be a
-   public certificate, not the self-signed infrastructure one.
-3. During fail-open clients reach Carbonio directly and see the self-signed
-   certificate, so alert on watchdog events.
-
-## LDAP mode
-
-With `mode: ldap`, `switchboard sync` reads every Carbonio domain that has
-`zimbraVirtualHostname` and a domain certificate (`zimbraSSLCertificate`,
-`zimbraSSLPrivateKey`), validates the certificate for each virtual hostname and
-installs it. Upload the certificate once in the Carbonio Admin Panel (or with
-`zmdomaincertmgr savecrt`) and IMAPS/POP3S pick it up on the next sync.
-
-```sh
-switchboard sync -dry-run       # show the plan
-switchboard sync                # apply it (one haproxy check, one reload)
-systemctl enable --now switchboard-sync.timer   # every 15 minutes
+```bash
+go test ./internal/starttls/ -run '^$' -fuzz FuzzSMTPClient -fuzztime 60s
 ```
 
-Rules:
+```bash
+go run ./tools/loadtest -host <ip> -mode starttls -n 500 -hold 3m
+```
 
-- LDAP is only read. If LDAP is unreachable or the bind fails, nothing changes.
-- A virtual hostname the certificate does not cover is skipped.
-- A hostname installed with `switchboard add` is never overwritten by sync.
-  `switchboard remove` hands it back to sync.
-- Certificates whose domain lost its certificate or virtual hostname are removed.
-  More than `max_remove` removals in one run are refused.
-- Reading `zimbraSSLPrivateKey` needs a Carbonio LDAP admin. The built in
-  application accounts (`zmpostfix`, `zmamavis`, `zmnginx`) cannot read it, and
-  a narrower account would need a custom slapd ACL, which changes Carbonio.
-- On the Carbonio node itself, connect over the local socket and read the
-  password from Carbonio at run time, so no copy is stored and nothing crosses
-  the network:
+Packages are built by the `package` workflow on every pull request; pushing a
+`v*` tag publishes a GitHub release with the `.deb`, the binary and checksums.
 
-  ```yaml
-  ldap:
-    url: ldapi:///run/carbonio/run/ldapi
-    bind_dn: uid=zimbra,cn=admins,cn=zimbra
-    password_command: [runuser, -u, zextras, --, /opt/zextras/bin/zmlocalconfig, -s, -m, nokey, zimbra_ldap_password]
-  ```
-- On a separate host, use `ldaps://` or StartTLS and a `password_file` with mode
-  `0600`. `sync` warns when it runs over plain `ldap://`.
+## Documentation
 
-Daily expiry check: install `deploy/systemd/switchboard-check.{service,timer}`
-and run `systemctl enable --now switchboard-check.timer`. Results go to the journal.
+- [docs/CONCEPT.md](docs/CONCEPT.md) – design
+- [docs/LAB-RESULTS.md](docs/LAB-RESULTS.md) – every lab test and its result
+- [docs/PRODUCTION.md](docs/PRODUCTION.md) – production readiness checklist
+- [CHANGELOG.md](CHANGELOG.md)
 
-## Disclaimer
+## License
 
-Not affiliated with or endorsed by Zextras. Carbonio is a trademark of its owner.
+No open source license has been chosen yet. All rights reserved by the author
+until a license file is added.
+
+Switchboard is not affiliated with or endorsed by Zextras. Carbonio is a
+trademark of its owner.
