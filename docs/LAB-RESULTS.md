@@ -194,6 +194,24 @@ Carbonio directly, so fail-open did not work. The rule now marks only
 connections opened by Switchboard (CONNMARK on new local connections with a
 non-local source address).
 
+## Self-signed infrastructure certificate
+
+Wildcard infrastructure certificate backed up (files, keystores, LDAP values),
+then Carbonio's own self-signed certificate deployed with
+`zmcertmgr deploycrt self` and the Carbonio systemd targets restarted.
+Measured interruption on the node: SMTP about 5 s, IMAP about 15 to 20 s.
+
+| Test | Result |
+|---|---|
+| Switchboard before changing its backend settings | Client TLS with customer certificate, then upstream verification fails (`valid for <infra host>, not <old name>`); no fallback to unverified |
+| Backend switched to Carbonio CA (`ca-file`, `upstream_ca`) | 993/995 suite, 465 suite and 587/143/110 suite all pass |
+| Customer hostname on 993 | Public certificate, verify OK |
+| No SNI | `default_cert` (public), not the self-signed one |
+| Port 25 | Self-signed infrastructure certificate from Postfix (server to server, opportunistic TLS) |
+| HAProxy stopped (fail-open) | Client reaches Carbonio and gets the self-signed certificate, verify error 20 |
+| HAProxy started | Customer certificate, verify OK |
+| Real client IP in Carbonio | Still logged |
+
 ## Rollback
 
 ```sh
