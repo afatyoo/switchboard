@@ -19,6 +19,20 @@ ldap:
   state_file: /var/lib/switchboard/ldap-managed.json
   max_remove: 5              # refuse to remove more certificates than this in one run
 
+# STARTTLS proxy for 587, 143 and 110 (switchboard proxy, switchboard-proxy.service).
+# Uses cert_dir like HAProxy, so add/sync cover these ports too.
+proxy:
+  default_cert: /etc/haproxy/default.pem
+  banner: mail.provider.example
+  transparent: true                      # needs CAP_NET_ADMIN and deploy/tproxy
+  upstream_verify_name: mail.provider.example
+  # upstream_ca: /etc/switchboard/upstream-ca.pem
+  max_per_ip: 50
+  listeners:
+    - {protocol: smtp, listen: ":10587", upstream: "HOST_IP:587"}
+    - {protocol: imap, listen: ":10143", upstream: "HOST_IP:143"}
+    - {protocol: pop3, listen: ":10110", upstream: "HOST_IP:110"}
+
 haproxy:
   check_cmd: [haproxy, -c, -q, -f, /etc/haproxy/haproxy.cfg]
   reload_cmd: [systemctl, reload, haproxy]

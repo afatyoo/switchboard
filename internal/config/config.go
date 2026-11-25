@@ -32,6 +32,7 @@ type Config struct {
 		StateFile    string        `yaml:"state_file"` // hostnames installed by sync
 		MaxRemove    int           `yaml:"max_remove"` // refuse bigger removals in one run
 	} `yaml:"ldap"`
+	Proxy   Proxy `yaml:"proxy"`
 	HAProxy struct {
 		CheckCmd  []string      `yaml:"check_cmd"`
 		ReloadCmd []string      `yaml:"reload_cmd"`

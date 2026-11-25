@@ -159,6 +159,24 @@ so `mynetworks` does not allow relay on this port.
 | Postfix log | `connect from unknown[<real client IP>]` |
 | IMAP/POP3 regression suite after the change | All pass |
 
+## STARTTLS proxy (587, 143, 110)
+
+`switchboard proxy` as systemd service (user `haproxy`, `CAP_NET_ADMIN`),
+iptables redirect 587/143/110 to 10587/10143/10110, TPROXY mark extended to
+those source ports.
+
+| Test | Result |
+|---|---|
+| SMTP: AUTH not offered before STARTTLS, offered by Postfix after | OK |
+| SMTP STARTTLS with SNI, AUTH, send | Customer certificate, OK |
+| SMTP unauthenticated relay | Rejected by Postfix |
+| IMAP: LOGINDISABLED before STARTTLS, STARTTLS with SNI, LOGIN, SELECT | OK |
+| POP3: STLS with SNI, USER/PASS, STAT | OK |
+| Postfix submission log | `connect from unknown[<real client IP>]` |
+| Carbonio mailbox log | `oip=<real client IP>` |
+| Regression: 993/995 suite, 465 suite | All pass |
+| Unit tests: injected data after STARTTLS, long lines, command limit, per IP limit | Rejected |
+
 ## Rollback
 
 ```sh
