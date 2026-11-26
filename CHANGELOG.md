@@ -41,6 +41,20 @@ alphabetical order. See [docs/CODENAMES.md](docs/CODENAMES.md).
   rollback cannot leave a truncated `haproxy.cfg` or `config.yaml` (part of
   #21).
 
+### Hardening (part of #21)
+
+- CI: pull request builds in `package.yml` run with `contents: read`; only a
+  separate tag-triggered `release` job gets `contents: write`. All actions are
+  pinned to commit SHAs.
+- `deploy/iptables/rollback.sh` and `deploy/tproxy/rollback.sh` report each
+  failed delete on stderr instead of ignoring it, and still exit 0.
+- New `watchdog.min_failopen_interval` (default 0, off): after a fail-open the
+  redirect is not restored until the interval has passed, so a flapping
+  listener toggles a port at most once per interval. Fail-open itself is never
+  delayed.
+- New metric `switchboard_failopen_active_seconds{port}` and alert
+  `SwitchboardFailOpenProlonged` for a fail-open lasting over 5 minutes.
+
 ## v0.2.0 "Bakelite"
 
 Installation becomes one command, and fail-open now covers the STARTTLS ports
