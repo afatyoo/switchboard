@@ -16,4 +16,5 @@ if command -v netfilter-persistent >/dev/null; then
 fi
 # Remove the internal port guard.
 try iptables -D INPUT -p tcp -m multiport --dports 10993,10995,10465,10587,10143,10110 -m conntrack ! --ctstate DNAT ! -i lo -m comment --comment switchboard-guard -j DROP
+try iptables -D OUTPUT -o lo -p tcp -m multiport --dports 10993,10995,10465,10587,10143,10110 -m owner ! --uid-owner 0 -m comment --comment switchboard-guard -j REJECT --reject-with tcp-reset
 exit 0

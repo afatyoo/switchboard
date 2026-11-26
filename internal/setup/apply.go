@@ -200,8 +200,8 @@ func (a *Applier) writeFiles(p *Plan) error {
 	for _, f := range p.Files {
 		dst := a.path(f.Path)
 		if old, err := os.ReadFile(dst); err == nil {
-			bak := dst + ".switchboard-backup-" + stamp
-			if err := os.WriteFile(bak, old, 0o600); err != nil {
+			bak, err := writeBackup(dst+".switchboard-backup-"+stamp, old)
+			if err != nil {
 				return err
 			}
 			p.backups[f.Path] = bak
@@ -221,6 +221,29 @@ func (a *Applier) writeFiles(p *Plan) error {
 // predictable name or planted symlink is followed), fsyncs it, applies mode
 // and group, then renames it over dst. A crash leaves dst either old or new,
 // never truncated.
+// writeBackup creates a new 0600 file named prefix plus a random suffix. It
+// never opens an existing name, so a planted symlink is not followed.
+func writeBackup(prefix string, data []byte) (string, error) {
+	f, err := os.CreateTemp(filepath.Dir(prefix), filepath.Base(prefix)+"-*")
+	if err != nil {
+		return "", err
+	}
+	if err := f.Chmod(0o600); err == nil {
+		_, err = f.Write(data)
+		if err == nil {
+			err = f.Sync()
+		}
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
+}
+
 func (a *Applier) writeAtomic(dst string, data []byte, mode os.FileMode, group string) error {
 	tmp, err := os.CreateTemp(filepath.Dir(dst), "."+filepath.Base(dst)+".switchboard-*.tmp")
 	if err != nil {

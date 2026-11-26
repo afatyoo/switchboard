@@ -24,14 +24,6 @@ alphabetical order. See [docs/CODENAMES.md](docs/CODENAMES.md).
   without `IP_TRANSPARENT`, so a local session never reaches Carbonio as
   127.0.0.1 through the gateway (part of #21).
 
-### Added
-
-- `proxy.max_sessions` (default 20000, 0 = unlimited): one session limit for
-  all STARTTLS listeners; rejected sessions count as `limited` (#18).
-- `proxy.idle_timeout` (default 0, off): close encrypted sessions with no
-  traffic in either direction (#18).
-- `proxy.pretls_command_timeout` (default 15s): per command wait before
-  STARTTLS, inside the overall pre-TLS limit (part of #21).
 - The root watchdog now reads the proxy stats file without following
   symlinks, refuses FIFOs and non regular files, checks the owner is the
   `haproxy` user and caps the size at 1 MiB. The watchdog unit gets
@@ -40,6 +32,20 @@ alphabetical order. See [docs/CODENAMES.md](docs/CODENAMES.md).
   temp name, fsync and rename, so a planted symlink is never followed and a
   rollback cannot leave a truncated `haproxy.cfg` or `config.yaml` (part of
   #21).
+- Local non root processes can no longer connect to the Switchboard listener
+  ports over loopback (`guard.sh` rejects them on `OUTPUT`). Without it a local
+  user could fill the STARTTLS session limit or HAProxy `maxconn` and make the
+  watchdog fail open (#17 follow up). The watchdog runs as root and is not
+  affected.
+
+### Added
+
+- `proxy.max_sessions` (default 20000, 0 = unlimited): one session limit for
+  all STARTTLS listeners; rejected sessions count as `limited` (#18).
+- `proxy.idle_timeout` (default 0, off): close encrypted sessions with no
+  traffic in either direction (#18).
+- `proxy.pretls_command_timeout` (default 15s): per command wait before
+  STARTTLS, inside the overall pre-TLS limit (part of #21).
 
 ### Hardening (part of #21)
 

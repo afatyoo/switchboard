@@ -332,6 +332,17 @@ dropped every session right after STARTTLS.
 | Unit tests | New tests fail on the old code and pass with the fix |
 | All protocol suites | 15 + 4 + 13 pass |
 
+## Audit follow-ups (#18, #19, #20, #21)
+
+| Test | Result |
+|---|---|
+| User `nobody` connects to 10993 / 10587 over loopback | Rejected; root (watchdog) still connects, all listeners up |
+| `haproxy` user replaces the stats file with a symlink to `/dev/zero` (#20) | Watchdog logs `too many levels of symbolic links`, RSS stays about 15 MB, proxy rewrites a regular file |
+| ClientHello SNI containing a newline and fake fields (#19) | One log line with `sni="invalid"`, no forged line |
+| `LimitNOFILE=40`, 55 idle connections to 587 (#18) | `accept: too many open files, backing off`, same PID, service stays active |
+| Watchdog unit | `MemoryMax=256M` |
+| All protocol suites | 15 + 4 + 13 pass |
+
 ## Rollback
 
 ```sh
