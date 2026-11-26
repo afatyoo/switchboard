@@ -50,30 +50,157 @@ hostname. Switchboard removes the need for either.
 
 ## How it works
 
-```text
-                         ┌──────────────── Carbonio node ─────────────────┐
-mail client              │                                                │
- SNI: mail.customer.com  │  993/995/465 ─► HAProxy ────────┐              │
- ───────────────────────►│                                 ├─► Carbonio   │
-                         │  587/143/110 ─► switchboard ────┘   proxy/MTA  │
-                         │                 proxy (STARTTLS)               │
-                         │      ▲ per-domain certificate, chosen by SNI   │
-                         │      └ manual (switchboard add) or LDAP sync   │
-                         └────────────────────────────────────────────────┘
+Switchboard runs on the Carbonio node. Carbonio itself is not reconfigured.
+
+### Components
+
+```mermaid
+flowchart LR
+    client["Mail client<br/>SNI: mail.customer.com"]
+
+    subgraph node["Carbonio node"]
+        direction LR
+        redirect{{"iptables<br/>PREROUTING redirect"}}
+        haproxy["HAProxy<br/>10993 / 10995 / 10465<br/>implicit TLS"]
+        proxy["switchboard proxy<br/>10587 / 10143 / 10110<br/>STARTTLS"]
+        certs[("/etc/haproxy/certs<br/>one PEM per hostname<br/>+ default.pem")]
+        carbonio["Carbonio nginx proxy<br/>and Postfix<br/>on 10.255.255.1"]
+        watchdog["switchboard watchdog<br/>(root)"]
+        direct["Public port 25 and 443"]
+    end
+
+    client -->|"993 / 995 / 465"| redirect
+    client -->|"587 / 143 / 110"| redirect
+    client -->|"25 / 443"| direct
+    redirect --> haproxy
+    redirect --> proxy
+    certs -.->|"certificate by SNI"| haproxy
+    certs -.->|"certificate by SNI"| proxy
+    haproxy ==>|"verified TLS,<br/>client IP as source"| carbonio
+    proxy ==>|"verified TLS,<br/>client IP as source"| carbonio
+    direct --> carbonio
+    watchdog -.->|"health checks"| haproxy
+    watchdog -.->|"health checks"| proxy
+    watchdog -.->|"adds or removes redirect"| redirect
 ```
 
-1. iptables redirects the public mail ports to Switchboard's listeners.
-2. HAProxy (implicit TLS) or `switchboard proxy` (STARTTLS) completes the TLS
-   handshake with the certificate that matches the client's SNI.
-3. A new, verified TLS connection goes to Carbonio, using the client's IP as
-   source address (TPROXY), so Carbonio and Postfix see and log the real client.
-4. Authentication, mailbox access and mail delivery stay entirely with Carbonio.
-5. If the path through Switchboard stops working, the watchdog removes that
-   port's redirect and clients reach Carbonio directly (fail-open). The check
-   goes all the way to Carbonio: the server greeting over TLS on 993/995/465,
-   and a full STARTTLS exchange on 587/143/110. Fail-open is never delayed;
-   `watchdog.min_failopen_interval` (default off) can hold back the restore so
-   a flapping listener toggles a port at most once per interval.
+### Implicit TLS: IMAPS 993, POP3S 995, SMTPS 465
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Mail client
+    participant F as iptables
+    participant H as HAProxy
+    participant B as Carbonio
+    C->>F: TCP connect to port 993
+    F->>H: redirect to port 10993
+    C->>H: TLS ClientHello with SNI mail.customer.com
+    H->>H: pick certificate for the SNI, else default.pem
+    H-->>C: TLS established with the customer certificate
+    H->>B: TCP connect using the client IP as source (TPROXY)
+    H->>B: new TLS session, certificate verified
+    B-->>C: server greeting, relayed
+    C->>B: login and mail traffic, relayed unchanged
+    Note over B: authentication, mailbox and delivery stay in Carbonio
+```
+
+### STARTTLS: submission 587, IMAP 143, POP3 110
+
+The session starts in clear text, so HAProxy cannot handle it. `switchboard
+proxy` answers that part itself (SMTP shown).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Mail client
+    participant S as switchboard proxy
+    participant B as Carbonio Postfix
+    C->>S: TCP connect (redirected from 587 to 10587)
+    S-->>C: 220 greeting
+    C->>S: EHLO
+    S-->>C: 250 STARTTLS (no PIPELINING, no AUTH)
+    C->>S: STARTTLS
+    Note over S: reject if any data follows STARTTLS (command injection)
+    S-->>C: 220 ready
+    C->>S: TLS ClientHello with SNI
+    S-->>C: TLS established with the customer certificate
+    S->>B: TCP connect using the client IP as source (TPROXY)
+    B-->>S: 220 greeting
+    S->>B: EHLO, STARTTLS
+    S->>B: TLS session, certificate verified
+    C->>B: EHLO, AUTH, MAIL, DATA relayed unchanged
+```
+
+Before TLS only a few commands are accepted, with limits on line length,
+command count, time per command and sessions per IP and in total.
+
+### Where certificates come from
+
+```mermaid
+flowchart TD
+    manual["switchboard add<br/>cert, key, chain files"]
+    admin["Carbonio Admin Panel<br/>domain certificate + virtual hosts"]
+    ldap[("Carbonio LDAP")]
+    sync["switchboard sync<br/>every 15 minutes, read only"]
+    validate{"valid?<br/>key matches, name covered,<br/>dates, chain"}
+    reject["rejected or skipped,<br/>previous file stays"]
+    write["atomic write to<br/>/etc/haproxy/certs"]
+    check{"haproxy -c ok?"}
+    rollback["restore previous files,<br/>no reload"]
+    reload["reload HAProxy<br/>open sessions stay up"]
+    proxyread["switchboard proxy reads the same directory<br/>and reloads files that changed"]
+
+    manual --> validate
+    admin --> ldap --> sync --> validate
+    validate -- no --> reject
+    validate -- yes --> write --> check
+    check -- no --> rollback
+    check -- yes --> reload
+    write --> proxyread
+```
+
+Names added by hand are never overwritten by sync. Sync removes certificates it
+installed when the domain no longer has them, at most `max_remove` per run.
+
+### Fail-open watchdog
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    Active: Redirected through Switchboard
+    Failing: Probe failing
+    Open: Fail-open, clients reach Carbonio directly
+    Recovering: Probe passing again
+
+    [*] --> Active
+    Active --> Failing: probe fails
+    Failing --> Active: probe passes
+    Failing --> Open: 3 failures in a row, redirect removed
+    Open --> Recovering: probe passes
+    Recovering --> Open: probe fails
+    Recovering --> Active: 3 successes in a row, redirect restored
+```
+
+Each port is checked every 5 seconds. The check reaches Carbonio: the server
+greeting over TLS on 993/995/465, and a full STARTTLS exchange on 587/143/110
+(at most every 30 seconds, greeting only in between). During fail-open clients
+see the Carbonio infrastructure certificate, and the
+`switchboard_failopen_active_seconds` metric and alerts report it. Fail-open is
+never delayed; `watchdog.min_failopen_interval` (default off) can hold back the
+restore so a flapping listener toggles a port at most once per interval.
+
+### Return path with TPROXY
+
+```mermaid
+flowchart LR
+    S["HAProxy or switchboard proxy<br/>connects from the client IP"] -->|"tagged with connmark"| B["Carbonio on 10.255.255.1"]
+    B -->|"reply to the client IP"| R["policy route, table 151:<br/>deliver locally on lo"]
+    R --> S
+```
+
+Only connections opened by Switchboard are tagged, so a client that reaches
+Carbonio directly during fail-open is answered normally.
 
 ## Features
 
