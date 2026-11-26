@@ -28,6 +28,9 @@ proxy:
   upstream_verify_name: mail.provider.example
   # upstream_ca: /etc/switchboard/upstream-ca.pem
   max_per_ip: 50
+  max_sessions: 20000                    # all listeners together, 0 = unlimited
+  pretls_command_timeout: 15s            # per plain text command before STARTTLS
+  # idle_timeout: 30m                    # close piped sessions idle this long, 0 = off (default)
   listeners:
     - {protocol: smtp, listen: "0.0.0.0:10587", upstream: "10.255.255.1:587"}
     - {protocol: imap, listen: "0.0.0.0:10143", upstream: "10.255.255.1:143"}
