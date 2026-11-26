@@ -11,6 +11,10 @@ type Watchdog struct {
 	Interval     time.Duration `yaml:"interval"`
 	FailAfter    int           `yaml:"fail_after"`
 	RecoverAfter int           `yaml:"recover_after"`
+	// MinFailOpenInterval holds back restoring a port's redirect until this
+	// long after its last fail-open, to stop flapping. Fail-open itself is
+	// never delayed. 0 disables it.
+	MinFailOpenInterval time.Duration `yaml:"min_failopen_interval"`
 	// DeepEvery is how often the full STARTTLS check (through to Carbonio)
 	// runs per port; in between only the proxy greeting is checked.
 	DeepEvery time.Duration  `yaml:"deep_every"`
@@ -39,6 +43,12 @@ func DefaultWatchdogPorts() []WatchdogPort {
 func (c Config) ValidateWatchdog() error {
 	if len(c.Watchdog.Ports) == 0 {
 		return errors.New("watchdog.ports is empty")
+	}
+	if c.Watchdog.MinFailOpenInterval < 0 {
+		return errors.New("watchdog.min_failopen_interval must not be negative")
+	}
+	if m := c.Watchdog.MinFailOpenInterval; m > 0 && m > 24*time.Hour {
+		return fmt.Errorf("watchdog.min_failopen_interval %s is too long (max 24h)", m)
 	}
 	for i, p := range c.Watchdog.Ports {
 		if p.Public <= 0 || p.Public > 65535 || p.Local <= 0 || p.Local > 65535 {

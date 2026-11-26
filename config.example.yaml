@@ -28,6 +28,9 @@ proxy:
   upstream_verify_name: mail.provider.example
   # upstream_ca: /etc/switchboard/upstream-ca.pem
   max_per_ip: 50
+  max_sessions: 20000                    # all listeners together, 0 = unlimited
+  pretls_command_timeout: 15s            # per plain text command before STARTTLS
+  # idle_timeout: 30m                    # close piped sessions idle this long, 0 = off (default)
   listeners:
     - {protocol: smtp, listen: "0.0.0.0:10587", upstream: "10.255.255.1:587"}
     - {protocol: imap, listen: "0.0.0.0:10143", upstream: "10.255.255.1:143"}
@@ -38,6 +41,10 @@ watchdog:
   fail_after: 3
   recover_after: 3
   deep_every: 30s      # full STARTTLS check through to Carbonio, per port
+  # After a fail-open, wait at least this long before restoring the redirect,
+  # so a flapping listener toggles a port at most once per interval.
+  # Fail-open itself is never delayed. 0 (default) disables it.
+  min_failopen_interval: 0s
   # node_exporter textfile collector file; empty disables metrics
   metrics_file: /var/lib/node_exporter/textfile/switchboard.prom
   # ports default to 993/995/465 (tls check) and 587/143/110 (banner check)

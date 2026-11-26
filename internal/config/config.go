@@ -58,6 +58,8 @@ func Default() Config {
 	c.LDAP.MaxRemove = 5
 	c.LDAP.StatusFile = "/var/lib/switchboard/sync-status.json"
 	c.Proxy.StatsFile = "/run/switchboard/proxy-stats.json"
+	c.Proxy.MaxSessions = 20000 // below LimitNOFILE/2 of switchboard-proxy.service
+	c.Proxy.PreTLSCommandTimeout = 15 * time.Second
 	c.Watchdog.Interval = 5 * time.Second
 	c.Watchdog.FailAfter = 3
 	c.Watchdog.RecoverAfter = 3

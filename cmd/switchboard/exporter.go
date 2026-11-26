@@ -4,6 +4,8 @@ import (
 	"errors"
 	"log"
 	"os"
+	"os/user"
+	"strconv"
 	"time"
 
 	"github.com/afatyoo/switchboard/internal/cert"
@@ -96,12 +98,29 @@ func (e *exporter) sync(b *metrics.Builder) {
 	b.Gauge("switchboard_sync_skipped", "Virtual hostnames skipped by the last sync (invalid or not covered).", nil, float64(s.Skipped))
 }
 
+// proxyStatsUID returns the uid expected to own the proxy stats file: the
+// haproxy user that runs `switchboard proxy`. If that user does not exist the
+// owner check is skipped (-1); the other ReadJSONSafe checks still apply.
+func proxyStatsUID() int {
+	u, err := user.Lookup("haproxy")
+	if err != nil {
+		return -1
+	}
+	uid, err := strconv.Atoi(u.Uid)
+	if err != nil {
+		return -1
+	}
+	return uid
+}
+
 func (e *exporter) proxy(b *metrics.Builder) {
 	if e.cfg.Proxy.StatsFile == "" || len(e.cfg.Proxy.Listeners) == 0 {
 		return
 	}
 	var s metrics.ProxyStats
-	if err := metrics.ReadJSON(e.cfg.Proxy.StatsFile, &s); err != nil {
+	// The stats file lives in a directory owned by the haproxy user, so read
+	// it without following symlinks and with a size cap (#20).
+	if err := metrics.ReadJSONSafe(e.cfg.Proxy.StatsFile, metrics.DefaultMaxJSONBytes, proxyStatsUID(), &s); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			e.log.Printf("metrics: proxy stats: %v", err)
 		}

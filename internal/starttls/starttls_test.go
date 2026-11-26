@@ -126,6 +126,12 @@ func startProxy(t *testing.T, proto string, p *pki, upstream string) string {
 // clientStartTLS runs the client side up to STARTTLS and returns the TLS conn.
 func clientStartTLS(t *testing.T, proto, addr, sni string, roots *x509.CertPool) *tls.Conn {
 	t.Helper()
+	return clientStartTLSConfig(t, proto, addr, &tls.Config{ServerName: sni, RootCAs: roots})
+}
+
+// clientStartTLSConfig is clientStartTLS with a caller supplied TLS config.
+func clientStartTLSConfig(t *testing.T, proto, addr string, cfg *tls.Config) *tls.Conn {
+	t.Helper()
 	c, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
@@ -169,7 +175,7 @@ func clientStartTLS(t *testing.T, proto, addr, sni string, roots *x509.CertPool)
 			t.Fatalf("STLS answered %q", l)
 		}
 	}
-	tc := tls.Client(c, &tls.Config{ServerName: sni, RootCAs: roots})
+	tc := tls.Client(c, cfg)
 	if err := tc.Handshake(); err != nil {
 		t.Fatalf("handshake: %v", err)
 	}

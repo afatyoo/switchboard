@@ -3,19 +3,26 @@ package config
 import (
 	"errors"
 	"fmt"
+	"time"
 )
 
 // Proxy configures `switchboard proxy`, the STARTTLS proxy for ports 587,
 // 143 and 110.
 type Proxy struct {
-	DefaultCert        string          `yaml:"default_cert"`
-	Banner             string          `yaml:"banner"`
-	Transparent        bool            `yaml:"transparent"`
-	UpstreamVerifyName string          `yaml:"upstream_verify_name"`
-	UpstreamCA         string          `yaml:"upstream_ca"`
-	MaxPerIP           int             `yaml:"max_per_ip"`
-	StatsFile          string          `yaml:"stats_file"` // snapshot read by the watchdog for metrics
-	Listeners          []ProxyListener `yaml:"listeners"`
+	DefaultCert        string `yaml:"default_cert"`
+	Banner             string `yaml:"banner"`
+	Transparent        bool   `yaml:"transparent"`
+	UpstreamVerifyName string `yaml:"upstream_verify_name"`
+	UpstreamCA         string `yaml:"upstream_ca"`
+	MaxPerIP           int    `yaml:"max_per_ip"`
+	// MaxSessions caps concurrent sessions over all listeners; 0 = unlimited.
+	MaxSessions int `yaml:"max_sessions"`
+	// IdleTimeout closes a piped session with no traffic; 0 = disabled.
+	IdleTimeout time.Duration `yaml:"idle_timeout"`
+	// PreTLSCommandTimeout bounds the wait for each plain text command.
+	PreTLSCommandTimeout time.Duration   `yaml:"pretls_command_timeout"`
+	StatsFile            string          `yaml:"stats_file"` // snapshot read by the watchdog for metrics
+	Listeners            []ProxyListener `yaml:"listeners"`
 }
 
 // ProxyListener is one protocol on one port.
@@ -33,6 +40,9 @@ func (c Config) ValidateProxy() error {
 	}
 	if p.Banner == "" || p.UpstreamVerifyName == "" {
 		return errors.New("proxy.banner and proxy.upstream_verify_name are required")
+	}
+	if p.MaxSessions < 0 || p.IdleTimeout < 0 || p.PreTLSCommandTimeout < 0 {
+		return errors.New("proxy.max_sessions, proxy.idle_timeout and proxy.pretls_command_timeout must not be negative")
 	}
 	for i, l := range p.Listeners {
 		switch l.Protocol {

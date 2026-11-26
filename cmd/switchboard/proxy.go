@@ -42,6 +42,7 @@ func cmdProxy(cfg config.Config) error {
 	defer stop()
 	errc := make(chan error, len(cfg.Proxy.Listeners))
 	stats := &starttls.Stats{}
+	sessions := starttls.NewSessionLimit(cfg.Proxy.MaxSessions)
 	if cfg.Proxy.StatsFile != "" {
 		go func() {
 			t := time.NewTicker(10 * time.Second)
@@ -74,6 +75,10 @@ func cmdProxy(cfg config.Config) error {
 			MaxPerIP:    cfg.Proxy.MaxPerIP,
 			Log:         logger,
 			Stats:       stats,
+			Sessions:    sessions,
+
+			PreTLSCommandTimeout: cfg.Proxy.PreTLSCommandTimeout,
+			IdleTimeout:          cfg.Proxy.IdleTimeout,
 		}
 		go func() { errc <- l.Serve(ctx) }()
 	}

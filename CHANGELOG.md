@@ -13,6 +13,53 @@ alphabetical order. See [docs/CODENAMES.md](docs/CODENAMES.md).
   limit or tracked by the HAProxy stick tables. Internet clients keep their
   limits. Re-run `switchboard setup` (or update `haproxy.cfg` by hand) to pick
   up the HAProxy change.
+- STARTTLS proxy: the client SNI is logged quoted, and only when it is a valid
+  hostname (`sni="invalid"` otherwise), so it cannot forge log lines.
+  Certificate selection uses the same hostname rule and falls back to the
+  default certificate (fixes #19).
+- STARTTLS proxy: running out of file descriptors no longer stops it. Transient
+  accept errors (EMFILE, ENFILE, ECONNABORTED) are logged and retried with a
+  short backoff (fixes #18).
+- STARTTLS proxy: in transparent mode, loopback clients are dialed upstream
+  without `IP_TRANSPARENT`, so a local session never reaches Carbonio as
+  127.0.0.1 through the gateway (part of #21).
+
+- The root watchdog now reads the proxy stats file without following
+  symlinks, refuses FIFOs and non regular files, checks the owner is the
+  `haproxy` user and caps the size at 1 MiB. The watchdog unit gets
+  `MemoryMax=256M` (fixes #20).
+- Sync state and files written by `switchboard setup` go through a random
+  temp name, fsync and rename, so a planted symlink is never followed and a
+  rollback cannot leave a truncated `haproxy.cfg` or `config.yaml` (part of
+  #21).
+- Local non root processes can no longer connect to the Switchboard listener
+  ports over loopback (`guard.sh` rejects them on `OUTPUT`). Without it a local
+  user could fill the STARTTLS session limit or HAProxy `maxconn` and make the
+  watchdog fail open (#17 follow up). The watchdog runs as root and is not
+  affected.
+
+### Added
+
+- `proxy.max_sessions` (default 20000, 0 = unlimited): one session limit for
+  all STARTTLS listeners; rejected sessions count as `limited` (#18).
+- `proxy.idle_timeout` (default 0, off): close encrypted sessions with no
+  traffic in either direction (#18).
+- `proxy.pretls_command_timeout` (default 15s): per command wait before
+  STARTTLS, inside the overall pre-TLS limit (part of #21).
+
+### Hardening (part of #21)
+
+- CI: pull request builds in `package.yml` run with `contents: read`; only a
+  separate tag-triggered `release` job gets `contents: write`. All actions are
+  pinned to commit SHAs.
+- `deploy/iptables/rollback.sh` and `deploy/tproxy/rollback.sh` report each
+  failed delete on stderr instead of ignoring it, and still exit 0.
+- New `watchdog.min_failopen_interval` (default 0, off): after a fail-open the
+  redirect is not restored until the interval has passed, so a flapping
+  listener toggles a port at most once per interval. Fail-open itself is never
+  delayed.
+- New metric `switchboard_failopen_active_seconds{port}` and alert
+  `SwitchboardFailOpenProlonged` for a fail-open lasting over 5 minutes.
 
 ## v0.2.0 "Bakelite"
 

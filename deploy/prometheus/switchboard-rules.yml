@@ -14,6 +14,14 @@ groups:
           summary: "Switchboard fail-open on port {{ $labels.port }}"
           description: "Clients on port {{ $labels.port }} reach Carbonio directly and see the infrastructure certificate instead of the customer certificate."
 
+      - alert: SwitchboardFailOpenProlonged
+        expr: switchboard_failopen_active_seconds > 300
+        labels:
+          severity: critical
+        annotations:
+          summary: "Switchboard fail-open on port {{ $labels.port }} has lasted over 5 minutes"
+          description: "The watchdog removed the redirect {{ $value | humanizeDuration }} ago and the listener has not recovered. Check haproxy.service or switchboard-proxy.service."
+
       - alert: SwitchboardListenerDown
         expr: switchboard_listener_up == 0
         for: 1m

@@ -4,15 +4,19 @@ on:
   push:
     tags: ["v*"]
 
+# Read-only by default; only the tag-triggered release job can write.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   deb:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      codename: ${{ steps.v.outputs.codename }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
 
@@ -55,17 +59,30 @@ jobs:
           cp dist/switchboard-linux-amd64 dist/pkg/
           cd dist/pkg && sha256sum * > SHA256SUMS && ls -l
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: switchboard-${{ steps.v.outputs.version }}
           path: dist/pkg/
 
+  release:
+    needs: deb
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # CHANGELOG.md is needed for the release notes.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: switchboard-${{ needs.deb.outputs.version }}
+          path: dist/pkg/
+
       - name: Release
-        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-          CODENAME: ${{ steps.v.outputs.codename }}
+          CODENAME: ${{ needs.deb.outputs.codename }}
         run: |
           notes=$(awk -v t="## ${TAG}" 'index($0, t)==1 && (length($0)==length(t) || substr($0, length(t)+1, 1)==" "){f=1;next} /^## /{f=0} f' CHANGELOG.md)
           title="Switchboard $TAG"
@@ -73,4 +90,4 @@ jobs:
             title="$title \"$CODENAME\""
             notes="Codename: **$CODENAME**"$'\n\n'"$notes"
           fi
-          gh release create "$TAG" dist/pkg/* --title "$title" --notes "$notes"
+          gh release create --repo "$GITHUB_REPOSITORY" "$TAG" dist/pkg/* --title "$title" --notes "$notes"

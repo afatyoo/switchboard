@@ -71,7 +71,9 @@ mail client              │                                                │
 5. If the path through Switchboard stops working, the watchdog removes that
    port's redirect and clients reach Carbonio directly (fail-open). The check
    goes all the way to Carbonio: the server greeting over TLS on 993/995/465,
-   and a full STARTTLS exchange on 587/143/110.
+   and a full STARTTLS exchange on 587/143/110. Fail-open is never delayed;
+   `watchdog.min_failopen_interval` (default off) can hold back the restore so
+   a flapping listener toggles a port at most once per interval.
 
 ## Features
 
@@ -154,6 +156,16 @@ All settings live in `/etc/switchboard/config.yaml`; the annotated example is
 | `proxy.*` | STARTTLS listeners, upstream address and verification name |
 | `watchdog.*` | Fail-open thresholds and the Prometheus metrics file |
 
+**Proxy limits.** `proxy.max_per_ip` caps sessions per client address
+(loopback is exempt). `proxy.max_sessions` (default 20000, `0` = unlimited)
+caps sessions over all STARTTLS listeners together, below half of the
+service's `LimitNOFILE=65536`; sessions over it are closed at once and counted
+as `limited`. `proxy.pretls_command_timeout` (default `15s`) is the wait for
+each plain text command before STARTTLS, inside the 60 s pre-TLS limit.
+`proxy.idle_timeout` (default `0`, off) closes encrypted sessions with no
+traffic in either direction; leave it off or set it well above the IMAP IDLE
+refresh interval of your clients (29 minutes is common).
+
 **Upstream address.** HAProxy and the proxy reach Carbonio on `10.255.255.1`,
 an address `switchboard-tproxy` adds to `lo`. Using the public address instead
 causes conntrack collisions when many clients share one IP (an office behind
@@ -206,15 +218,16 @@ job is needed. On Carbonio the directory is `/opt/zextras/zmstat/prometheus/`.
 | Metric | Meaning |
 |---|---|
 | `switchboard_redirect_active{port}` | 1 normal, 0 during fail-open |
+| `switchboard_failopen_active_seconds{port}` | How long the current fail-open has lasted, 0 normally |
 | `switchboard_listener_up{port,listener}` | Last health probe succeeded |
 | `switchboard_certificate_valid{hostname}` | Certificate validates |
 | `switchboard_certificate_expiry_timestamp_seconds{hostname}` | Expiry time |
 | `switchboard_sync_last_run_success` | LDAP sync status |
 | `switchboard_proxy_sessions_total{protocol,result}` | STARTTLS sessions by outcome |
 
-**Alerts.** Ten rules in
+**Alerts.** Eleven rules in
 [`/usr/share/switchboard/prometheus/switchboard-rules.yml`](deploy/prometheus/switchboard-rules.yml):
-fail-open, listener down, watchdog stale, certificate expiring or invalid,
+fail-open (and fail-open lasting over 5 minutes), listener down, watchdog stale, certificate expiring or invalid,
 sync failing, proxy upstream errors. On Carbonio copy the file to
 `/etc/carbonio/carbonio-prometheus/rules/`. To get them by email, add
 `/etc/carbonio/carbonio-prometheus/alertmanager/switchboard.yml` with

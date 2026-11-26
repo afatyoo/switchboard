@@ -41,7 +41,14 @@ type Watchdog struct {
 	Interval     time.Duration
 	FailAfter    int // consecutive failures before removing the redirect
 	RecoverAfter int // consecutive successes before restoring it
-	Log          *log.Logger
+	// MinFailOpenInterval stops a flapping listener from toggling the
+	// redirect: after a fail-open the redirect is not restored until this
+	// long has passed, so a port toggles at most once per interval. It never
+	// delays fail-open itself. 0 disables it.
+	MinFailOpenInterval time.Duration
+	// Now returns the current time; nil means time.Now. For tests.
+	Now func() time.Time
+	Log *log.Logger
 	// AfterTick runs after every round, for example to write metrics.
 	AfterTick func(w *Watchdog)
 
@@ -51,9 +58,18 @@ type Watchdog struct {
 
 type portState struct {
 	fails, oks int
-	open       bool // redirect active
-	up         bool // last probe succeeded
-	failOpens  int  // times the redirect was removed
+	open       bool      // redirect active
+	up         bool      // last probe succeeded
+	failOpens  int       // times the redirect was removed
+	openedAt   time.Time // when the redirect was last removed (fail-open began)
+	held       bool      // restore is being held back by MinFailOpenInterval
+}
+
+func (w *Watchdog) now() time.Time {
+	if w.Now != nil {
+		return w.Now()
+	}
+	return time.Now()
 }
 
 // Collect adds the watchdog's metrics to b.
@@ -66,6 +82,11 @@ func (w *Watchdog) Collect(b *metrics.Builder) {
 		l := metrics.Labels{"port": strconv.Itoa(p.Public), "listener": strconv.Itoa(p.Local)}
 		b.Gauge("switchboard_listener_up", "1 if the Switchboard listener answered the last health probe.", l, boolf(st.up))
 		b.Gauge("switchboard_redirect_active", "1 if traffic for the port goes through Switchboard, 0 during fail-open.", metrics.Labels{"port": strconv.Itoa(p.Public)}, boolf(st.open))
+		active := 0.0
+		if !st.open && !st.openedAt.IsZero() {
+			active = w.lastTick.Sub(st.openedAt).Seconds()
+		}
+		b.Gauge("switchboard_failopen_active_seconds", "Seconds the current fail-open has lasted (since the watchdog removed the redirect), 0 while the redirect is active.", metrics.Labels{"port": strconv.Itoa(p.Public)}, active)
 		b.Counter("switchboard_failopen_total", "Times the watchdog removed the redirect since it started.", metrics.Labels{"port": strconv.Itoa(p.Public)}, float64(st.failOpens))
 	}
 	b.Gauge("switchboard_watchdog_last_tick_timestamp_seconds", "Unix time of the last watchdog round.", nil, float64(w.lastTick.Unix()))
@@ -128,7 +149,7 @@ func (w *Watchdog) Tick(ctx context.Context) {
 		}
 	}
 	defer func() {
-		w.lastTick = time.Now()
+		w.lastTick = w.now()
 		if w.AfterTick != nil {
 			w.AfterTick(w)
 		}
@@ -149,6 +170,7 @@ func (w *Watchdog) Tick(ctx context.Context) {
 				}
 				st.open = false
 				st.failOpens++
+				st.openedAt = w.now()
 				w.Log.Printf("watchdog: port %d: listener %d unhealthy (%v), redirect removed, clients go to Carbonio directly", p.Public, p.Local, err)
 			}
 			continue
@@ -156,6 +178,16 @@ func (w *Watchdog) Tick(ctx context.Context) {
 		st.oks++
 		st.fails = 0
 		if !st.open && st.oks >= w.RecoverAfter {
+			if w.MinFailOpenInterval > 0 && !st.openedAt.IsZero() {
+				if wait := w.MinFailOpenInterval - w.now().Sub(st.openedAt); wait > 0 {
+					if !st.held {
+						st.held = true
+						w.Log.Printf("watchdog: port %d: listener %d healthy, holding restore for %s (min_failopen_interval)", p.Public, p.Local, wait.Round(time.Second))
+					}
+					continue
+				}
+			}
+			st.held = false
 			if aerr := w.Firewall.Add(p); aerr != nil {
 				w.Log.Printf("watchdog: port %d: restoring redirect failed: %v", p.Public, aerr)
 				continue

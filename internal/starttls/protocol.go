@@ -70,6 +70,15 @@ func readLine(r *bufio.Reader) (string, error) {
 // noPipelinedData guards against STARTTLS command injection: nothing may
 // follow the STARTTLS command in the plain text buffer, otherwise it would be
 // treated as if it had arrived over TLS.
+//
+// Checking only the bufio buffer is enough. Bytes the client sent after
+// STARTTLS that are still in the kernel socket buffer are read next by
+// tls.Server as handshake records, so they fail the handshake; they are never
+// forwarded upstream as plain text. Only the bufio buffer could hand pre-TLS
+// bytes to the post-TLS side, because it is a separate reader dropped after
+// this check (tls.Server reads the raw conn, not br). Keep it that way: never
+// pass this reader, or anything wrapping it, to tls.Server or to the upstream
+// copy.
 func noPipelinedData(r *bufio.Reader) error {
 	if r.Buffered() > 0 {
 		return errors.New("data after STARTTLS, possible command injection")

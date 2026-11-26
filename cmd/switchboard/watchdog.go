@@ -28,13 +28,14 @@ func cmdWatchdog(cfg config.Config, st *store.Store, opts cert.Options) error {
 	defer stop()
 	logger := log.New(os.Stdout, "", 0)
 	w := &watchdog.Watchdog{
-		Ports:        ports,
-		Firewall:     watchdog.IPTables{},
-		Probe:        (&watchdog.Checker{DeepEvery: cfg.Watchdog.DeepEvery}).Probe,
-		Interval:     cfg.Watchdog.Interval,
-		FailAfter:    cfg.Watchdog.FailAfter,
-		RecoverAfter: cfg.Watchdog.RecoverAfter,
-		Log:          logger,
+		Ports:               ports,
+		Firewall:            watchdog.IPTables{},
+		Probe:               (&watchdog.Checker{DeepEvery: cfg.Watchdog.DeepEvery}).Probe,
+		Interval:            cfg.Watchdog.Interval,
+		FailAfter:           cfg.Watchdog.FailAfter,
+		RecoverAfter:        cfg.Watchdog.RecoverAfter,
+		MinFailOpenInterval: cfg.Watchdog.MinFailOpenInterval,
+		Log:                 logger,
 	}
 	if cfg.Watchdog.MetricsFile != "" {
 		e := &exporter{cfg: cfg, st: st, opts: opts, log: logger, certEvery: 5 * time.Minute}
