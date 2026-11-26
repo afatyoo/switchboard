@@ -13,13 +13,16 @@ an alert for a fail-open that lasts. Tested on a Carbonio 26.9 node on Ubuntu
 
 - `apt install ./switchboard_0.3.0_amd64.deb` over v0.2.0 restarts the running
   services with the new binary; the configuration is kept.
-- Re-run `switchboard setup` (or copy the current
-  `deploy/haproxy/haproxy.cfg` by hand) so the loopback exemption in the HAProxy
-  stick tables is installed. Without it the per-IP limit still counts the
-  watchdog probe.
-- The iptables guard now rejects loopback connections to the listener ports. A
-  local probe that connects to 587, 993 or 465 through 127.0.0.1 stops working
-  and has to use a non-loopback address instead.
+- Installing the package alone does not install the new firewall rule or the
+  updated HAProxy configuration. Run `switchboard setup` again with the flags
+  you used before (`-dry-run` previews it). Without it the HAProxy per-IP limit
+  still counts the watchdog probe and local users can still reach the listener
+  ports.
+- The iptables guard now rejects loopback connections from non root users to
+  the listener ports (10993, 10995, 10465, 10587, 10143, 10110). The public
+  mail ports from localhost are not affected and go straight to Carbonio. A
+  local monitoring check that probes a listener port directly must run as root
+  or use the public port.
 - `proxy.max_sessions` defaults to 20000 sessions (0 = unlimited),
   `proxy.pretls_command_timeout` to 15s, and `proxy.idle_timeout` plus
   `watchdog.min_failopen_interval` stay off, so an existing `config.yaml` keeps
