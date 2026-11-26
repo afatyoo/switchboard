@@ -3,6 +3,17 @@
 Every release has a codename from the history of the telephone exchange, in
 alphabetical order. See [docs/CODENAMES.md](docs/CODENAMES.md).
 
+## Unreleased
+
+### Security
+
+- A local unprivileged process could force fail-open on a public mail port by
+  holding every per-IP slot for 127.0.0.1, the source of the watchdog probe
+  (#17). Loopback sources are no longer counted by the STARTTLS proxy per-IP
+  limit or tracked by the HAProxy stick tables. Internet clients keep their
+  limits. Re-run `switchboard setup` (or update `haproxy.cfg` by hand) to pick
+  up the HAProxy change.
+
 ## v0.2.0 "Bakelite"
 
 Installation becomes one command, and fail-open now covers the STARTTLS ports

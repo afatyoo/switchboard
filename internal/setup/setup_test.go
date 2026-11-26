@@ -158,6 +158,9 @@ func TestRenderLoadsAndCoversPorts(t *testing.T) {
 			if implicit == 0 && h != nil {
 				t.Fatalf("%q: haproxy.cfg rendered without implicit ports", list)
 			}
+			if implicit > 0 && !strings.Contains(string(h), "track-sc0 src if !{ src 127.0.0.0/8 ::1 }") {
+				t.Fatalf("loopback must not be tracked (issue #17):\n%s", h)
+			}
 			if implicit > 0 && !strings.Contains(string(h), "ca-file "+CarbonioCAPath+" verifyhost mail-demo.example.test") {
 				t.Fatalf("backend verification wrong:\n%s", h)
 			}

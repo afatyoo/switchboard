@@ -192,8 +192,22 @@ func (l *Listener) dialUpstream(client net.Addr) (net.Conn, error) {
 	return d.Dial("tcp", l.Upstream)
 }
 
-func (l *Listener) acquire(ip string) bool {
+// limited reports whether the per-IP cap applies to ip. Loopback sources are
+// exempt: they are local processes that can already reach Carbonio directly,
+// and the watchdog probes from loopback, so a local process filling a
+// loopback bucket must not be able to make the probe fail and force fail-open
+// (issue #17). Internet clients keep their real address through the redirect
+// and TPROXY, so they never appear as loopback.
+func (l *Listener) limited(ip string) bool {
 	if l.MaxPerIP <= 0 {
+		return false
+	}
+	p := net.ParseIP(ip)
+	return p == nil || !p.IsLoopback()
+}
+
+func (l *Listener) acquire(ip string) bool {
+	if !l.limited(ip) {
 		return true
 	}
 	l.mu.Lock()
@@ -209,7 +223,7 @@ func (l *Listener) acquire(ip string) bool {
 }
 
 func (l *Listener) release(ip string) {
-	if l.MaxPerIP <= 0 {
+	if !l.limited(ip) {
 		return
 	}
 	l.mu.Lock()
