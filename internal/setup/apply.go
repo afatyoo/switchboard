@@ -209,19 +209,40 @@ func (a *Applier) writeFiles(p *Plan) error {
 		} else {
 			p.backups[f.Path] = ""
 		}
-		tmp := dst + ".switchboard-new"
-		if err := os.WriteFile(tmp, f.Data, f.Mode); err != nil {
-			return err
-		}
-		if err := a.own(tmp, f.Mode, f.Group); err != nil {
-			return err
-		}
-		if err := os.Rename(tmp, dst); err != nil {
+		if err := a.writeAtomic(dst, f.Data, f.Mode, f.Group); err != nil {
 			return err
 		}
 		a.Log("wrote %s", f.Path)
 	}
 	return nil
+}
+
+// writeAtomic writes data to a randomly named temp file next to dst (so no
+// predictable name or planted symlink is followed), fsyncs it, applies mode
+// and group, then renames it over dst. A crash leaves dst either old or new,
+// never truncated.
+func (a *Applier) writeAtomic(dst string, data []byte, mode os.FileMode, group string) error {
+	tmp, err := os.CreateTemp(filepath.Dir(dst), "."+filepath.Base(dst)+".switchboard-*.tmp")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	defer os.Remove(name)
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := a.own(name, mode, group); err != nil {
+		return err
+	}
+	return os.Rename(name, dst)
 }
 
 func (a *Applier) own(path string, mode os.FileMode, group string) error {
@@ -252,8 +273,10 @@ func (a *Applier) restoreFiles(p *Plan) {
 			continue
 		}
 		if data, err := os.ReadFile(bak); err == nil {
-			os.WriteFile(dst, data, f.Mode)
-			a.own(dst, f.Mode, f.Group)
+			if err := a.writeAtomic(dst, data, f.Mode, f.Group); err != nil {
+				a.Log("restore %s failed: %v", f.Path, err)
+				continue
+			}
 			a.Log("restored %s", f.Path)
 		}
 	}

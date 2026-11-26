@@ -109,6 +109,52 @@ func TestApplyRollsBackWhenPortsFail(t *testing.T) {
 	}
 }
 
+func TestWriteFilesIgnoresPlantedTempSymlink(t *testing.T) {
+	_, p, root := planFor(t)
+	os.MkdirAll(filepath.Join(root, "etc/haproxy"), 0o755)
+	victim := filepath.Join(t.TempDir(), "victim")
+	os.WriteFile(victim, []byte("untouched"), 0o644)
+	for _, f := range p.Files {
+		dst := filepath.Join(root, f.Path)
+		os.MkdirAll(filepath.Dir(dst), 0o755)
+		if err := os.Symlink(victim, dst+".switchboard-new"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a := &Applier{Root: root, Log: func(string, ...any) {}, Now: time.Now}
+	if err := a.writeFiles(p); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(victim); string(got) != "untouched" {
+		t.Fatalf("symlink at old temp path followed: %q", got)
+	}
+	for _, f := range p.Files {
+		got, err := os.ReadFile(filepath.Join(root, f.Path))
+		if err != nil || string(got) != string(f.Data) {
+			t.Fatalf("%s not written", f.Path)
+		}
+	}
+}
+
+func TestRestoreFilesWritesFullPreviousContent(t *testing.T) {
+	_, p, root := planFor(t)
+	os.MkdirAll(filepath.Join(root, "etc/haproxy"), 0o755)
+	old := strings.Repeat("global\n  maxconn 4096\n", 5000)
+	os.WriteFile(filepath.Join(root, HAProxyPath), []byte(old), 0o644)
+	a := &Applier{Root: root, Log: func(string, ...any) {}, Now: time.Now}
+	if err := a.writeFiles(p); err != nil {
+		t.Fatal(err)
+	}
+	a.restoreFiles(p)
+	got, _ := os.ReadFile(filepath.Join(root, HAProxyPath))
+	if string(got) != old {
+		t.Fatalf("restore gave %d bytes, want %d", len(got), len(old))
+	}
+	if left, _ := filepath.Glob(filepath.Join(root, "etc/haproxy/.*.tmp")); len(left) != 0 {
+		t.Fatalf("temp files left behind: %v", left)
+	}
+}
+
 func TestInvalidHAProxyConfigActivatesNothing(t *testing.T) {
 	_, p, root := planFor(t)
 	r := &recorder{fail: func(c string) bool { return strings.HasPrefix(c, "haproxy -c") }}
