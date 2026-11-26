@@ -13,6 +13,25 @@ alphabetical order. See [docs/CODENAMES.md](docs/CODENAMES.md).
   limit or tracked by the HAProxy stick tables. Internet clients keep their
   limits. Re-run `switchboard setup` (or update `haproxy.cfg` by hand) to pick
   up the HAProxy change.
+- STARTTLS proxy: the client SNI is logged quoted, and only when it is a valid
+  hostname (`sni="invalid"` otherwise), so it cannot forge log lines.
+  Certificate selection uses the same hostname rule and falls back to the
+  default certificate (fixes #19).
+- STARTTLS proxy: running out of file descriptors no longer stops it. Transient
+  accept errors (EMFILE, ENFILE, ECONNABORTED) are logged and retried with a
+  short backoff (fixes #18).
+- STARTTLS proxy: in transparent mode, loopback clients are dialed upstream
+  without `IP_TRANSPARENT`, so a local session never reaches Carbonio as
+  127.0.0.1 through the gateway (part of #21).
+
+### Added
+
+- `proxy.max_sessions` (default 20000, 0 = unlimited): one session limit for
+  all STARTTLS listeners; rejected sessions count as `limited` (#18).
+- `proxy.idle_timeout` (default 0, off): close encrypted sessions with no
+  traffic in either direction (#18).
+- `proxy.pretls_command_timeout` (default 15s): per command wait before
+  STARTTLS, inside the overall pre-TLS limit (part of #21).
 
 ## v0.2.0 "Bakelite"
 

@@ -154,6 +154,16 @@ All settings live in `/etc/switchboard/config.yaml`; the annotated example is
 | `proxy.*` | STARTTLS listeners, upstream address and verification name |
 | `watchdog.*` | Fail-open thresholds and the Prometheus metrics file |
 
+**Proxy limits.** `proxy.max_per_ip` caps sessions per client address
+(loopback is exempt). `proxy.max_sessions` (default 20000, `0` = unlimited)
+caps sessions over all STARTTLS listeners together, below half of the
+service's `LimitNOFILE=65536`; sessions over it are closed at once and counted
+as `limited`. `proxy.pretls_command_timeout` (default `15s`) is the wait for
+each plain text command before STARTTLS, inside the 60 s pre-TLS limit.
+`proxy.idle_timeout` (default `0`, off) closes encrypted sessions with no
+traffic in either direction; leave it off or set it well above the IMAP IDLE
+refresh interval of your clients (29 minutes is common).
+
 **Upstream address.** HAProxy and the proxy reach Carbonio on `10.255.255.1`,
 an address `switchboard-tproxy` adds to `lo`. Using the public address instead
 causes conntrack collisions when many clients share one IP (an office behind
