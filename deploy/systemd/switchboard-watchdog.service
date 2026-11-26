@@ -10,6 +10,9 @@ RestartSec=2
 NoNewPrivileges=yes
 ProtectHome=yes
 PrivateTmp=yes
+# Defence in depth (#20): the watchdog reads files written by less privileged
+# processes; cap its memory so a bad input cannot exhaust the host.
+MemoryMax=256M
 
 [Install]
 WantedBy=multi-user.target
