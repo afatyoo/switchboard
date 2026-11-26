@@ -32,6 +32,14 @@ alphabetical order. See [docs/CODENAMES.md](docs/CODENAMES.md).
   traffic in either direction (#18).
 - `proxy.pretls_command_timeout` (default 15s): per command wait before
   STARTTLS, inside the overall pre-TLS limit (part of #21).
+- The root watchdog now reads the proxy stats file without following
+  symlinks, refuses FIFOs and non regular files, checks the owner is the
+  `haproxy` user and caps the size at 1 MiB. The watchdog unit gets
+  `MemoryMax=256M` (fixes #20).
+- Sync state and files written by `switchboard setup` go through a random
+  temp name, fsync and rename, so a planted symlink is never followed and a
+  rollback cannot leave a truncated `haproxy.cfg` or `config.yaml` (part of
+  #21).
 
 ## v0.2.0 "Bakelite"
 
