@@ -3,7 +3,27 @@
 Every release has a codename from the history of the telephone exchange, in
 alphabetical order. See [docs/CODENAMES.md](docs/CODENAMES.md).
 
-## Unreleased
+## v0.3.0 "Crossbar"
+
+Security fixes from the first audit, session limits on the STARTTLS proxy, and
+an alert for a fail-open that lasts. Tested on a Carbonio 26.9 node on Ubuntu
+24.04.
+
+### Upgrade notes
+
+- `apt install ./switchboard_0.3.0_amd64.deb` over v0.2.0 restarts the running
+  services with the new binary; the configuration is kept.
+- Re-run `switchboard setup` (or copy the current
+  `deploy/haproxy/haproxy.cfg` by hand) so the loopback exemption in the HAProxy
+  stick tables is installed. Without it the per-IP limit still counts the
+  watchdog probe.
+- The iptables guard now rejects loopback connections to the listener ports. A
+  local probe that connects to 587, 993 or 465 through 127.0.0.1 stops working
+  and has to use a non-loopback address instead.
+- `proxy.max_sessions` defaults to 20000 sessions (0 = unlimited),
+  `proxy.pretls_command_timeout` to 15s, and `proxy.idle_timeout` plus
+  `watchdog.min_failopen_interval` stay off, so an existing `config.yaml` keeps
+  working as before.
 
 ### Security
 

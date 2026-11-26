@@ -9,8 +9,8 @@ identifier; the codename is a label.
 |---|---|---|
 | v0.1.0 | Almon | Almon Strowger, inventor of the automatic telephone exchange (1891) |
 | v0.2.0 | Bakelite | The plastic of classic telephone handsets |
-| next | Crossbar | The crossbar switch, the exchange generation after Strowger's |
-| | Dialtone | The tone that says the line is ready |
+| v0.3.0 | Crossbar | The crossbar switch, the exchange generation after Strowger's |
+| next | Dialtone | The tone that says the line is ready |
 | | Exchange | The central office that connects calls |
 | | Fiber | Optical fiber trunks |
 
