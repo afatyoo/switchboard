@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/afatyoo/switchboard/internal/cert"
 )
 
 // Certs picks a certificate by SNI from the same directory HAProxy uses, so
@@ -28,8 +30,8 @@ type cached struct {
 
 // Get implements tls.Config.GetCertificate.
 func (c *Certs) Get(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	name := strings.ToLower(strings.TrimSuffix(hello.ServerName, "."))
-	if name != "" && !strings.ContainsAny(name, "/\\") && !strings.Contains(name, "..") {
+	name := normalizeSNI(hello.ServerName)
+	if validSNI(name) {
 		if crt, err := c.load(filepath.Join(c.Dir, name+".pem")); err == nil {
 			return crt, nil
 		}
@@ -40,7 +42,7 @@ func (c *Certs) Get(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 		}
 	}
 	if c.Default == "" {
-		return nil, errors.New("no certificate for " + name)
+		return nil, errors.New("no certificate for the requested name")
 	}
 	return c.load(c.Default)
 }
@@ -69,4 +71,29 @@ func (c *Certs) load(path string) (*tls.Certificate, error) {
 	}
 	c.cache[path] = cached{mod: st.ModTime(), cert: &crt}
 	return &crt, nil
+}
+
+// normalizeSNI lowercases a client supplied server name and drops one
+// trailing dot. The result is only trusted after cert.ValidHostname.
+func normalizeSNI(s string) string {
+	return strings.ToLower(strings.TrimSuffix(s, "."))
+}
+
+// logSNI returns the server name to record in the log: the normalized name
+// when it is a valid hostname, otherwise a fixed marker, so a client cannot
+// inject newlines or fake fields (issue #19).
+func logSNI(s string) string {
+	if s == "" {
+		return "-"
+	}
+	if n := normalizeSNI(s); validSNI(n) {
+		return n
+	}
+	return "invalid"
+}
+
+// validSNI applies the hostname rule used for certificate files. A wildcard
+// pattern is a file name form, not a name a client asks for.
+func validSNI(name string) bool {
+	return cert.ValidHostname(name) && !strings.HasPrefix(name, "*")
 }

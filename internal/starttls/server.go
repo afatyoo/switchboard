@@ -15,6 +15,8 @@ import (
 	"log"
 	"net"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -31,8 +33,18 @@ type Listener struct {
 	Log         *log.Logger
 	Stats       *Stats // optional, shared between listeners
 
-	PreTLSTimeout    time.Duration
-	HandshakeTimeout time.Duration
+	// Sessions is the process wide session limit shared by all listeners.
+	// Nil means unlimited.
+	Sessions *SessionLimit
+
+	PreTLSTimeout time.Duration
+	// PreTLSCommandTimeout bounds the wait for each plain text command, on
+	// top of PreTLSTimeout for the whole pre-TLS phase. Zero means 15 s.
+	PreTLSCommandTimeout time.Duration
+	HandshakeTimeout     time.Duration
+	// IdleTimeout closes a piped session after no traffic in either
+	// direction for this long. Zero disables it, so IMAP IDLE is unaffected.
+	IdleTimeout time.Duration
 
 	mu    sync.Mutex
 	perIP map[string]int
@@ -42,6 +54,9 @@ type Listener struct {
 func (l *Listener) Serve(ctx context.Context) error {
 	if l.PreTLSTimeout == 0 {
 		l.PreTLSTimeout = 60 * time.Second
+	}
+	if l.PreTLSCommandTimeout == 0 {
+		l.PreTLSCommandTimeout = 15 * time.Second
 	}
 	if l.HandshakeTimeout == 0 {
 		l.HandshakeTimeout = 15 * time.Second
@@ -61,19 +76,85 @@ func (l *Listener) Serve(ctx context.Context) error {
 func (l *Listener) serve(ctx context.Context, ln net.Listener) error {
 	go func() { <-ctx.Done(); ln.Close() }()
 	l.Log.Printf("%s: listening on %s, upstream %s", l.Proto.Name(), ln.Addr(), l.Upstream)
+	var backoff time.Duration
 	for {
 		c, err := ln.Accept()
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
-			var ne net.Error
-			if errors.As(err, &ne) && ne.Timeout() {
-				continue
+			if !transientAcceptErr(err) {
+				return err
 			}
-			return err
+			// fd exhaustion and similar conditions clear up as sessions end:
+			// back off and keep serving instead of exiting (issue #18).
+			if backoff == 0 {
+				l.Log.Printf("%s: accept: %v, backing off", l.Proto.Name(), err)
+				backoff = minAcceptBackoff
+			} else if backoff *= 2; backoff > maxAcceptBackoff {
+				backoff = maxAcceptBackoff
+			}
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(backoff):
+			}
+			continue
 		}
+		backoff = 0
 		go l.handle(c)
+	}
+}
+
+const (
+	minAcceptBackoff = 5 * time.Millisecond
+	maxAcceptBackoff = time.Second
+)
+
+// transientAcceptErr reports whether Accept may succeed later. A closed
+// listener is permanent; resource exhaustion and per connection errors are
+// retried.
+func transientAcceptErr(err error) bool {
+	if errors.Is(err, net.ErrClosed) {
+		return false
+	}
+	if errors.Is(err, syscall.EMFILE) || errors.Is(err, syscall.ENFILE) ||
+		errors.Is(err, syscall.ECONNABORTED) || errors.Is(err, syscall.ENOBUFS) ||
+		errors.Is(err, syscall.ENOMEM) {
+		return true
+	}
+	var ne net.Error
+	//nolint:staticcheck // Temporary is deprecated but still set for accept errors.
+	return errors.As(err, &ne) && (ne.Timeout() || ne.Temporary())
+}
+
+// SessionLimit caps concurrent sessions across all listeners of a process,
+// keeping fd use below LimitNOFILE.
+type SessionLimit struct{ ch chan struct{} }
+
+// NewSessionLimit returns a limit of n sessions, or nil (unlimited) for n <= 0.
+func NewSessionLimit(n int) *SessionLimit {
+	if n <= 0 {
+		return nil
+	}
+	return &SessionLimit{ch: make(chan struct{}, n)}
+}
+
+func (s *SessionLimit) tryAcquire() bool {
+	if s == nil {
+		return true
+	}
+	select {
+	case s.ch <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *SessionLimit) release() {
+	if s != nil {
+		<-s.ch
 	}
 }
 
@@ -88,8 +169,14 @@ func (l *Listener) handle(c net.Conn) {
 		if (result == "closed before STARTTLS" || result == "ok") && net.ParseIP(ip).IsLoopback() {
 			return // watchdog health probe, not worth a log line every few seconds
 		}
-		l.Log.Printf("%s client=%s sni=%s result=%q duration=%s", l.Proto.Name(), ip, sni, result, time.Since(start).Round(time.Millisecond))
+		l.Log.Printf("%s client=%s sni=%q result=%q duration=%s", l.Proto.Name(), ip, sni, result, time.Since(start).Round(time.Millisecond))
 	}()
+
+	if !l.Sessions.tryAcquire() {
+		result = "too many connections in total"
+		return
+	}
+	defer l.Sessions.release()
 
 	if !l.acquire(ip) {
 		result = "too many connections from this IP"
@@ -97,8 +184,9 @@ func (l *Listener) handle(c net.Conn) {
 	}
 	defer l.release(ip)
 
-	_ = c.SetDeadline(time.Now().Add(l.PreTLSTimeout))
-	br := bufio.NewReaderSize(c, 1024)
+	overall := time.Now().Add(l.PreTLSTimeout)
+	_ = c.SetDeadline(overall)
+	br := bufio.NewReaderSize(&cmdReader{c: c, per: l.PreTLSCommandTimeout, overall: overall}, 1024)
 	if err := l.Proto.Client(br, c, l.Banner); err != nil {
 		switch {
 		case errors.Is(err, errClose), errors.Is(err, io.EOF):
@@ -117,7 +205,7 @@ func (l *Listener) handle(c net.Conn) {
 		MinVersion: tls.VersionTLS12,
 		GetCertificate: func(h *tls.ClientHelloInfo) (*tls.Certificate, error) {
 			if h.ServerName != "" {
-				sni = h.ServerName
+				sni = logSNI(h.ServerName)
 			}
 			return l.Certs.Get(h)
 		},
@@ -149,17 +237,53 @@ func (l *Listener) handle(c net.Conn) {
 		return
 	}
 
-	// Both sides are encrypted: forward bytes. No idle deadline, so IMAP IDLE
-	// lasts as long as client and server keep it; TCP keepalive finds dead peers.
+	// Both sides are encrypted: forward bytes. No idle deadline by default, so
+	// IMAP IDLE lasts as long as client and server keep it; TCP keepalive finds
+	// dead peers. IdleTimeout, when set, closes sessions with no traffic.
 	_ = c.SetDeadline(time.Time{})
 	_ = up.SetDeadline(time.Time{})
-	pipe(ct, ut)
+	pipe(ct, ut, l.IdleTimeout)
 }
 
-func pipe(a, b net.Conn) {
+// cmdReader gives every read during the pre-TLS phase its own deadline, so a
+// client must send each command within per, and never past overall.
+type cmdReader struct {
+	c       net.Conn
+	per     time.Duration
+	overall time.Time
+}
+
+func (r *cmdReader) Read(p []byte) (int, error) {
+	d := r.overall
+	if r.per > 0 {
+		if t := time.Now().Add(r.per); t.Before(d) {
+			d = t
+		}
+	}
+	_ = r.c.SetReadDeadline(d)
+	return r.c.Read(p)
+}
+
+// activityReader records the time of the last successful read.
+type activityReader struct {
+	r    io.Reader
+	last *atomic.Int64
+}
+
+func (a activityReader) Read(p []byte) (int, error) {
+	n, err := a.r.Read(p)
+	if n > 0 {
+		a.last.Store(time.Now().UnixNano())
+	}
+	return n, err
+}
+
+func pipe(a, b net.Conn, idle time.Duration) {
+	var last atomic.Int64
+	last.Store(time.Now().UnixNano())
 	done := make(chan struct{}, 2)
 	cp := func(dst, src net.Conn) {
-		_, _ = io.Copy(dst, src)
+		_, _ = io.Copy(dst, activityReader{r: src, last: &last})
 		if cw, ok := dst.(interface{ CloseWrite() error }); ok {
 			_ = cw.CloseWrite()
 		}
@@ -167,6 +291,26 @@ func pipe(a, b net.Conn) {
 	}
 	go cp(a, b)
 	go cp(b, a)
+	if idle > 0 {
+		stop := make(chan struct{})
+		defer close(stop)
+		go func() {
+			t := time.NewTicker(idleCheckInterval(idle))
+			defer t.Stop()
+			for {
+				select {
+				case <-stop:
+					return
+				case <-t.C:
+					if time.Since(time.Unix(0, last.Load())) >= idle {
+						a.Close()
+						b.Close()
+						return
+					}
+				}
+			}
+		}()
+	}
 	<-done
 	// Give the other direction a moment to flush, then close both.
 	t := time.NewTimer(5 * time.Second)
@@ -179,17 +323,44 @@ func pipe(a, b net.Conn) {
 	b.Close()
 }
 
+func idleCheckInterval(idle time.Duration) time.Duration {
+	iv := idle / 4
+	if iv < 10*time.Millisecond {
+		iv = 10 * time.Millisecond
+	}
+	if iv > 5*time.Second {
+		iv = 5 * time.Second
+	}
+	return iv
+}
+
 func (l *Listener) dialUpstream(client net.Addr) (net.Conn, error) {
-	d := net.Dialer{Timeout: 10 * time.Second, KeepAlive: 60 * time.Second}
-	if l.Transparent {
-		ta, ok := client.(*net.TCPAddr)
-		if !ok {
-			return nil, fmt.Errorf("unexpected client address %v", client)
-		}
-		d.LocalAddr = &net.TCPAddr{IP: ta.IP}
-		d.Control = transparentControl
+	d, err := l.dialer(client)
+	if err != nil {
+		return nil, err
 	}
 	return d.Dial("tcp", l.Upstream)
+}
+
+// dialer returns the upstream dialer for a client. Transparent mode uses the
+// client IP as source, except for loopback clients: those are dialed plainly
+// from the local address that reaches upstream, so a local session is never
+// presented to Carbonio as 127.0.0.1 through the gateway (issue #21).
+func (l *Listener) dialer(client net.Addr) (*net.Dialer, error) {
+	d := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 60 * time.Second}
+	if !l.Transparent {
+		return d, nil
+	}
+	ta, ok := client.(*net.TCPAddr)
+	if !ok {
+		return nil, fmt.Errorf("unexpected client address %v", client)
+	}
+	if ta.IP.IsLoopback() {
+		return d, nil
+	}
+	d.LocalAddr = &net.TCPAddr{IP: ta.IP}
+	d.Control = transparentControl
+	return d, nil
 }
 
 // limited reports whether the per-IP cap applies to ip. Loopback sources are
