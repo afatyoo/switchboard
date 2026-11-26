@@ -302,3 +302,25 @@ func TestPerIPLimit(t *testing.T) {
 		t.Fatal("release did not free a slot")
 	}
 }
+
+// Issue #17: loopback sources (watchdog probes, local processes) are not
+// counted, so a local process cannot fill the bucket the probe uses.
+func TestPerIPLimitExemptsLoopback(t *testing.T) {
+	l := &Listener{MaxPerIP: 1}
+	for _, ip := range []string{"127.0.0.1", "127.0.0.2", "::1"} {
+		for i := 0; i < 5; i++ {
+			if !l.acquire(ip) {
+				t.Fatalf("%s limited on attempt %d", ip, i+1)
+			}
+		}
+		for i := 0; i < 5; i++ {
+			l.release(ip)
+		}
+	}
+	if len(l.perIP) != 0 {
+		t.Fatalf("loopback counted: %v", l.perIP)
+	}
+	if !l.acquire("192.0.2.1") || l.acquire("192.0.2.1") {
+		t.Fatal("non-loopback limit no longer enforced")
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -77,7 +78,7 @@ func fakeCarbonio(t *testing.T, proto string, cert tls.Certificate) net.Listener
 	return ln
 }
 
-func startProxy(t *testing.T, proto, upstream string, ca *testpki.CA) int {
+func startProxy(t *testing.T, proto, upstream string, ca *testpki.CA, maxPerIP ...int) int {
 	t.Helper()
 	dir := t.TempDir()
 	c, k := ca.ValidLeaf("mail.provider.test")
@@ -90,6 +91,9 @@ func startProxy(t *testing.T, proto, upstream string, ca *testpki.CA) int {
 		UpstreamTLS: &tls.Config{ServerName: "carbonio.test", RootCAs: ca.Pool()},
 		Log:         log.New(io.Discard, "", 0),
 		Listen:      "127.0.0.1:0",
+	}
+	if len(maxPerIP) > 0 {
+		l.MaxPerIP = maxPerIP[0]
 	}
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
@@ -165,5 +169,28 @@ func TestCheckerRunsFullProbeOnlyEveryDeepEvery(t *testing.T) {
 	// After a failure the full check runs every time until it passes.
 	if err := ck.Probe(ctx, p); err == nil {
 		t.Fatal("failed full check was cached")
+	}
+}
+
+// Issue #17: a local process holding every per-IP slot from 127.0.0.1 must
+// not make the watchdog probe fail.
+func TestProbeNotBlockedByFullLoopbackBucket(t *testing.T) {
+	ca := testpki.NewCA(true)
+	uc, uk := ca.ValidLeaf("carbonio.test")
+	upCert, _ := tls.X509KeyPair(uc, uk)
+	up := fakeCarbonio(t, "smtp", upCert)
+	port := startProxy(t, "smtp", up.Addr().String(), ca, 2)
+	addr := net.JoinHostPort("127.0.0.1", fmt.Sprint(port))
+	for i := 0; i < 5; i++ {
+		c, err := net.Dial("tcp", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close() // idle pre-TLS sessions holding slots
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := DefaultProbe(ctx, Port{Public: 587, Local: port, Check: "starttls"}); err != nil {
+		t.Fatalf("probe failed with the loopback bucket full: %v", err)
 	}
 }

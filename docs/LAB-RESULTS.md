@@ -322,6 +322,16 @@ Carbonio, so a broken upstream on 587/143/110 is not caught by setup's check.
 Before this change the same fault left 587/143/110 redirected to a proxy that
 dropped every session right after STARTTLS.
 
+## Issue #17: forced fail-open through the loopback quota
+
+| Test | Result |
+|---|---|
+| v0.2.0, user `nobody` holds 60 idle connections from 127.0.0.1 to 10587 and 10993 | Within 35 s the watchdog removed the redirects for 587 and 993 (bug reproduced) |
+| Fixed build, same attack plus 10465, held 50 s | No redirect removed, all six listeners healthy |
+| Remote client opens 60 connections to 993 and to 587 | 50 accepted, 10 rejected on each: internet per-IP limits unchanged |
+| Unit tests | New tests fail on the old code and pass with the fix |
+| All protocol suites | 15 + 4 + 13 pass |
+
 ## Rollback
 
 ```sh

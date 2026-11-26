@@ -93,7 +93,9 @@ defaults
 frontend {{frontend .}}
     bind :{{.Local}} ssl crt {{$.Opts.DefaultCert}} crt /etc/haproxy/certs/
     stick-table type ip size 100k expire 10m store conn_rate(60s),conn_cur
-    tcp-request connection track-sc0 src
+    # loopback (watchdog probes, local processes) is not tracked: a local
+    # process filling the 127.0.0.1 bucket must not block the probe (issue #17)
+    tcp-request connection track-sc0 src if !{ src 127.0.0.0/8 ::1 }
     tcp-request content set-log-level silent if { src 127.0.0.1 }
     tcp-request connection reject if { {{limits .}} }
     default_backend carbonio_{{frontend .}}
